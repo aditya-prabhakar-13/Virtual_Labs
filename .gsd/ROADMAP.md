@@ -1,6 +1,6 @@
 # ROADMAP.md
 
-> **Current Phase**: Not started
+> **Current Phase**: Phase 2
 > **Milestone**: v1.0
 
 ## Must-Haves
@@ -13,7 +13,7 @@
 ## Phases
 
 ### Phase 1: Foundation & Single-Player Physics
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 **Objective**: Setup the Next.js/React project, integrate Matter.js, and build a single-player sandbox where users can spawn shapes and basic constraints.
 **Requirements**: REQ-01, REQ-02
 
