@@ -1,6 +1,6 @@
 # ROADMAP.md
 
-> **Current Phase**: Phase 2
+> **Current Phase**: Phase 3
 > **Milestone**: v1.0
 
 ## Must-Haves
@@ -18,7 +18,7 @@
 **Requirements**: REQ-01, REQ-02
 
 ### Phase 2: Multiplayer & Sync Layer
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 **Objective**: Implement Socket.io rooms and the Agent Middleware to broadcast body transformations and synchronize physics states between clients.
 **Requirements**: REQ-03, REQ-04
 
