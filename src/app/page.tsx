@@ -3,6 +3,7 @@
 import PhysicsCanvas from "@/components/PhysicsCanvas";
 import Toolbar from "@/components/Toolbar";
 import SimControls from "@/components/SimControls";
+import RoomManager from "@/components/RoomManager";
 import { useState, useRef, useCallback } from "react";
 
 export type ToolType =
@@ -26,6 +27,8 @@ export default function Home() {
   const [activeTool, setActiveTool] = useState<ToolType>("grab");
   const canvasRef = useRef<PhysicsCanvasHandle>(null);
   const [paused, setPaused] = useState(false);
+  const [roomId, setRoomId] = useState<string | null>(null);
+  const [isHost, setIsHost] = useState(false);
 
   const handleTogglePause = useCallback(() => {
     if (canvasRef.current) {
@@ -41,15 +44,39 @@ export default function Home() {
     }
   }, []);
 
+  const handleRoomJoined = useCallback((id: string, host: boolean) => {
+    setRoomId(id);
+    setIsHost(host);
+  }, []);
+
+  const handleRoomLeft = useCallback(() => {
+    setRoomId(null);
+    setIsHost(false);
+  }, []);
+
+  const handleHostPromoted = useCallback(() => {
+    setIsHost(true);
+  }, []);
+
   return (
     <main className="flex h-screen w-screen overflow-hidden" style={{ background: "var(--bg-primary)" }}>
       <Toolbar activeTool={activeTool} onToolChange={setActiveTool} />
       <div className="flex-1 relative">
-        <PhysicsCanvas ref={canvasRef} activeTool={activeTool} />
+        <PhysicsCanvas
+          ref={canvasRef}
+          activeTool={activeTool}
+          roomId={roomId}
+          isHost={isHost}
+        />
         <SimControls
           isPaused={paused}
           onTogglePause={handleTogglePause}
           onReset={handleReset}
+        />
+        <RoomManager
+          onRoomJoined={handleRoomJoined}
+          onRoomLeft={handleRoomLeft}
+          onHostPromoted={handleHostPromoted}
         />
       </div>
     </main>
