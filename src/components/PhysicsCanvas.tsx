@@ -799,17 +799,19 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
           if (pausedRef.current || !engineRef.current) return;
 
           const allBodies = Matter.Composite.allBodies(engine.world);
+          const round = (val: number) => Math.round(val * 100) / 100;
+          
           const bodies: BodySnapshot[] = allBodies
             .filter((b) => !isStaticBoundary(b))
             .map((b) => ({
               id: b.id,
               label: b.label,
-              posX: b.position.x,
-              posY: b.position.y,
-              angle: b.angle,
-              velX: b.velocity.x,
-              velY: b.velocity.y,
-              angularVel: b.angularVelocity,
+              posX: round(b.position.x),
+              posY: round(b.position.y),
+              angle: round(b.angle),
+              velX: round(b.velocity.x),
+              velY: round(b.velocity.y),
+              angularVel: round(b.angularVelocity),
               isStatic: b.isStatic,
               shapeType: (b as any).circleRadius ? "circle" : "rectangle",
               circleRadius: (b as any).circleRadius,
