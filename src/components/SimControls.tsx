@@ -6,12 +6,16 @@ interface SimControlsProps {
   isPaused: boolean;
   onTogglePause: () => void;
   onReset: () => void;
+  onSaveClick: () => void;
+  onLibraryClick: () => void;
 }
 
 export default function SimControls({
   isPaused,
   onTogglePause,
   onReset,
+  onSaveClick,
+  onLibraryClick,
 }: SimControlsProps) {
   const [localPaused, setLocalPaused] = useState(isPaused);
 
@@ -99,6 +103,46 @@ export default function SimControls({
         >
           <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
           <path d="M3 3v5h5" />
+        </svg>
+      </button>
+
+      {/* Divider */}
+      <div
+        className="w-px h-6"
+        style={{ background: "var(--border-subtle)" }}
+      />
+
+      {/* Library */}
+      <button
+        onClick={onLibraryClick}
+        title="Library"
+        className="flex items-center justify-center w-10 h-10 rounded-xl transition-all duration-200 hover:scale-105"
+        style={{
+          background: "rgba(34, 197, 94, 0.1)",
+          color: "var(--accent-green)",
+        }}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+          <line x1="3" y1="9" x2="21" y2="9" />
+          <line x1="9" y1="21" x2="9" y2="9" />
+        </svg>
+      </button>
+
+      {/* Save */}
+      <button
+        onClick={onSaveClick}
+        title="Save Scenario"
+        className="flex items-center justify-center w-10 h-10 rounded-xl transition-all duration-200 hover:scale-105"
+        style={{
+          background: "rgba(255,255,255,0.06)",
+          color: "var(--text-secondary)",
+        }}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+          <polyline points="17 21 17 13 7 13 7 21" />
+          <polyline points="7 3 7 8 15 8" />
         </svg>
       </button>
 

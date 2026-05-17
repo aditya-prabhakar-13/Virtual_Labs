@@ -153,6 +153,123 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
         }
       },
       isPaused: () => pausedRef.current,
+      getSnapshot: () => {
+        if (!engineRef.current) return null;
+        const engine = engineRef.current;
+        const allBodies = Matter.Composite.allBodies(engine.world);
+        const bodies: BodySnapshot[] = allBodies
+          .filter((b) => !isStaticBoundary(b))
+          .map((b) => ({
+            id: b.id,
+            label: b.label,
+            posX: b.position.x,
+            posY: b.position.y,
+            angle: b.angle,
+            velX: b.velocity.x,
+            velY: b.velocity.y,
+            angularVel: b.angularVelocity,
+            isStatic: b.isStatic,
+            shapeType: (b as any).circleRadius ? "circle" : (b.label.includes("triangle") ? "triangle" : "rectangle"),
+            circleRadius: (b as any).circleRadius,
+            fillStyle: (b.render as any).fillStyle || "#3b82f6",
+            strokeStyle: (b.render as any).strokeStyle || "#60a5fa",
+          }));
+
+        const allConstraints = Matter.Composite.allConstraints(engine.world);
+        const constraints: ConstraintSnapshot[] = allConstraints
+          .filter((c) => c.label !== "Mouse Constraint")
+          .map((c) => ({
+            id: c.id,
+            bodyAId: c.bodyA ? c.bodyA.id : null,
+            bodyBId: c.bodyB ? c.bodyB.id : null,
+            pointBX: c.bodyB ? undefined : c.pointB.x,
+            pointBY: c.bodyB ? undefined : c.pointB.y,
+            stiffness: c.stiffness,
+            damping: c.damping,
+            length: c.length,
+            strokeStyle: (c.render as any).strokeStyle || "#ffffff",
+            lineWidth: (c.render as any).lineWidth || 1,
+          }));
+
+        return { bodies, constraints, timestamp: Date.now() } as PhysicsSnapshot;
+      },
+      loadSnapshot: (snapshot: PhysicsSnapshot) => {
+        if (!engineRef.current) return;
+        const engine = engineRef.current;
+        Matter.Composite.clear(engine.world, false, true);
+        addBoundaries(engine);
+
+        // Recreate bodies
+        const createdBodies = new Map<number, Matter.Body>();
+        snapshot.bodies.forEach((bs) => {
+          let body: Matter.Body | null = null;
+          if (bs.shapeType === "circle" && bs.circleRadius) {
+            body = Matter.Bodies.circle(bs.posX, bs.posY, bs.circleRadius, {
+              isStatic: bs.isStatic,
+              restitution: 0.5, friction: 0.3,
+              render: { fillStyle: bs.fillStyle, strokeStyle: bs.strokeStyle, lineWidth: 2 },
+            });
+          } else if (bs.shapeType === "triangle") {
+            body = Matter.Bodies.polygon(bs.posX, bs.posY, 3, 30, {
+              isStatic: bs.isStatic,
+              restitution: 0.3, friction: 0.5,
+              render: { fillStyle: bs.fillStyle, strokeStyle: bs.strokeStyle, lineWidth: 2 },
+            });
+          } else {
+            // rectangle or wall
+            body = Matter.Bodies.rectangle(bs.posX, bs.posY, bs.isStatic ? 120 : 50, bs.isStatic ? 20 : 50, {
+              isStatic: bs.isStatic,
+              restitution: 0.4, friction: 0.4,
+              render: { fillStyle: bs.fillStyle, strokeStyle: bs.strokeStyle, lineWidth: 2 },
+            });
+          }
+
+          if (body) {
+            // Force the original ID so constraints can link
+            (body as any).id = bs.id;
+            body.label = `synced_${bs.id}`;
+            Matter.Body.setAngle(body, bs.angle);
+            Matter.Body.setVelocity(body, { x: bs.velX, y: bs.velY });
+            Matter.Body.setAngularVelocity(body, bs.angularVel);
+            Matter.Composite.add(engine.world, body);
+            createdBodies.set(bs.id, body);
+          }
+        });
+
+        // Recreate constraints
+        snapshot.constraints.forEach((cs) => {
+          const bodyA = cs.bodyAId ? createdBodies.get(cs.bodyAId) : undefined;
+          const bodyB = cs.bodyBId ? createdBodies.get(cs.bodyBId) : undefined;
+
+          if (bodyA) {
+            const constraintOptions: any = {
+              bodyA,
+              stiffness: cs.stiffness,
+              damping: cs.damping,
+              length: cs.length,
+              render: { strokeStyle: cs.strokeStyle, lineWidth: cs.lineWidth, type: "line" },
+            };
+
+            if (bodyB) {
+              constraintOptions.bodyB = bodyB;
+            } else if (cs.pointBX !== undefined && cs.pointBY !== undefined) {
+              constraintOptions.pointB = { x: cs.pointBX, y: cs.pointBY };
+            }
+
+            const c = Matter.Constraint.create(constraintOptions);
+            (c as any).id = cs.id;
+            Matter.Composite.add(engine.world, c);
+          }
+        });
+
+        if (roomIdRef.current) {
+          const socket = getSocket();
+          socket.emit("physics:action", {
+            roomId: roomIdRef.current,
+            action: { type: "reset", payload: {} } as PhysicsAction,
+          });
+        }
+      },
     }));
 
     const addBoundaries = useCallback((engine: Matter.Engine) => {

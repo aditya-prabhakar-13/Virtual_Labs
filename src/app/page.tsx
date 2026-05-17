@@ -5,6 +5,7 @@ import Toolbar from "@/components/Toolbar";
 import SimControls from "@/components/SimControls";
 import RoomManager from "@/components/RoomManager";
 import AnalyticsPanel from "@/components/AnalyticsPanel";
+import LibraryModal from "@/components/LibraryModal";
 import { useState, useRef, useCallback } from "react";
 
 export type ToolType =
@@ -23,6 +24,8 @@ export interface PhysicsCanvasHandle {
   togglePause: () => void;
   resetWorld: () => void;
   isPaused: () => boolean;
+  getSnapshot: () => any;
+  loadSnapshot: (snapshot: any) => void;
 }
 
 export interface InspectedBodyData {
@@ -50,6 +53,7 @@ export default function Home() {
   const [isHost, setIsHost] = useState(false);
   const [inspectedBodyData, setInspectedBodyData] = useState<InspectedBodyData | null>(null);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
 
   const handleTogglePause = useCallback(() => {
     if (canvasRef.current) {
@@ -80,6 +84,50 @@ export default function Home() {
     setIsHost(true);
   }, []);
 
+  const handleSaveScenario = async () => {
+    if (!canvasRef.current) return;
+    const name = prompt("Enter a name for this scenario:");
+    if (!name) return;
+    const description = prompt("Enter a description (optional):") || "";
+    
+    const snapshot = canvasRef.current.getSnapshot();
+    if (!snapshot) {
+      alert("Failed to capture snapshot.");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/scenarios", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, description, snapshot }),
+      });
+      if (res.ok) {
+        alert("Scenario saved successfully!");
+      } else {
+        alert("Failed to save scenario.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("An error occurred while saving.");
+    }
+  };
+
+  const handleLoadScenario = async (id: string) => {
+    try {
+      const res = await fetch(`/api/scenarios/${id}`);
+      if (!res.ok) throw new Error("Failed to load scenario");
+      const data = await res.json();
+      if (canvasRef.current && data.snapshot) {
+        canvasRef.current.loadSnapshot(data.snapshot);
+        setShowLibrary(false);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to load scenario.");
+    }
+  };
+
   return (
     <main className="flex h-screen w-screen overflow-hidden" style={{ background: "var(--bg-primary)" }}>
       <Toolbar
@@ -100,6 +148,8 @@ export default function Home() {
           isPaused={paused}
           onTogglePause={handleTogglePause}
           onReset={handleReset}
+          onSaveClick={handleSaveScenario}
+          onLibraryClick={() => setShowLibrary(true)}
         />
         <RoomManager
           onRoomJoined={handleRoomJoined}
@@ -109,6 +159,11 @@ export default function Home() {
         <AnalyticsPanel
           isOpen={showAnalytics}
           data={inspectedBodyData}
+        />
+        <LibraryModal
+          isOpen={showLibrary}
+          onClose={() => setShowLibrary(false)}
+          onLoad={handleLoadScenario}
         />
       </div>
     </main>
