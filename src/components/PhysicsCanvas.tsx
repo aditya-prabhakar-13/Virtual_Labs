@@ -9,7 +9,7 @@ import React, {
   useCallback,
 } from "react";
 import Matter from "matter-js";
-import type { ToolType, PhysicsCanvasHandle } from "@/app/page";
+import type { ToolType, PhysicsCanvasHandle, InspectedBodyData } from "@/app/page";
 import {
   getSocket,
   type PhysicsSnapshot,
@@ -22,6 +22,7 @@ interface PhysicsCanvasProps {
   activeTool: ToolType;
   roomId: string | null;
   isHost: boolean;
+  onInspectedBodyUpdate: (data: InspectedBodyData | null) => void;
 }
 
 const GROUND_LABEL = "__ground__";
@@ -51,8 +52,44 @@ function randomColor() {
   return shapeColors[Math.floor(Math.random() * shapeColors.length)];
 }
 
+// Helper to draw an arrow on canvas
+function drawArrow(
+  ctx: CanvasRenderingContext2D,
+  fromX: number, fromY: number,
+  toX: number, toY: number,
+  color: string,
+  lineWidth: number = 2
+) {
+  const headLen = 8;
+  const dx = toX - fromX;
+  const dy = toY - fromY;
+  const angle = Math.atan2(dy, dx);
+
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.globalAlpha = 0.85;
+
+  // Line
+  ctx.beginPath();
+  ctx.moveTo(fromX, fromY);
+  ctx.lineTo(toX, toY);
+  ctx.stroke();
+
+  // Arrowhead
+  ctx.beginPath();
+  ctx.moveTo(toX, toY);
+  ctx.lineTo(toX - headLen * Math.cos(angle - Math.PI / 6), toY - headLen * Math.sin(angle - Math.PI / 6));
+  ctx.lineTo(toX - headLen * Math.cos(angle + Math.PI / 6), toY - headLen * Math.sin(angle + Math.PI / 6));
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
 const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
-  ({ activeTool, roomId, isHost }, ref) => {
+  ({ activeTool, roomId, isHost, onInspectedBodyUpdate }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const engineRef = useRef<Matter.Engine | null>(null);
     const renderRef = useRef<Matter.Render | null>(null);
@@ -62,9 +99,13 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
     const activeToolRef = useRef(activeTool);
     const constraintFirstBodyRef = useRef<Matter.Body | null>(null);
     const [firstBodySelected, setFirstBodySelected] = useState(false);
+    const [localInspectedBody, setLocalInspectedBody] = useState<InspectedBodyData | null>(null);
     const roomIdRef = useRef(roomId);
     const isHostRef = useRef(isHost);
     const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const inspectedBodyRef = useRef<Matter.Body | null>(null);
+    const onInspectedBodyUpdateRef = useRef(onInspectedBodyUpdate);
+    onInspectedBodyUpdateRef.current = onInspectedBodyUpdate;
 
     // Keep refs in sync with props
     useEffect(() => {
@@ -480,6 +521,124 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
       runnerRef.current = runner;
       Matter.Runner.run(runner, engine);
 
+      // --- VECTOR OVERLAY: afterRender draws velocity/force arrows ---
+      Matter.Events.on(render, "afterRender", () => {
+        const tool = activeToolRef.current;
+        if (tool !== "inspect") return;
+
+        const ctx = render.context as CanvasRenderingContext2D;
+        const allBodies = Matter.Composite.allBodies(engine.world);
+        const pixelRatio = window.devicePixelRatio || 1;
+
+        ctx.save();
+        ctx.scale(pixelRatio, pixelRatio);
+
+        for (const body of allBodies) {
+          if (body.isStatic || isStaticBoundary(body)) continue;
+
+          const px = body.position.x;
+          const py = body.position.y;
+          const vx = body.velocity.x;
+          const vy = body.velocity.y;
+          const velMag = Math.sqrt(vx * vx + vy * vy);
+
+          // Velocity arrow (cyan) — scale by 12 for visibility
+          if (velMag > 0.3) {
+            const scale = 12;
+            drawArrow(ctx, px, py, px + vx * scale, py + vy * scale, "#00d2ff", 2);
+          }
+
+          // Force arrow (orange) — body.force is per-tick, scale by 5000
+          const fx = body.force.x;
+          const fy = body.force.y;
+          const forceMag = Math.sqrt(fx * fx + fy * fy);
+          if (forceMag > 0.000001) {
+            const fScale = 5000;
+            drawArrow(ctx, px, py, px + fx * fScale, py + fy * fScale, "#f59e0b", 2);
+          }
+
+          // Highlight inspected body with pulsing ring
+          if (inspectedBodyRef.current && body.id === inspectedBodyRef.current.id) {
+            const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 200);
+            ctx.strokeStyle = `rgba(0, 210, 255, ${0.4 + pulse * 0.4})`;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            const radius = Math.max(30, (body as any).circleRadius || 30);
+            ctx.arc(px, py, radius + 6, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+
+        ctx.restore();
+      });
+
+      // --- INSPECT: click to select a body ---
+      const handleInspectClick = (e: MouseEvent) => {
+        if (activeToolRef.current !== "inspect") return;
+
+        const rect = render.canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        const bodiesAtPoint = Matter.Query.point(
+          Matter.Composite.allBodies(engine.world),
+          { x, y }
+        );
+        const clicked = bodiesAtPoint.find((b) => !isStaticBoundary(b) && !b.isStatic);
+
+        if (clicked) {
+          inspectedBodyRef.current = clicked;
+        } else {
+          inspectedBodyRef.current = null;
+          setLocalInspectedBody(null);
+          onInspectedBodyUpdateRef.current(null);
+        }
+      };
+      render.canvas.addEventListener("click", handleInspectClick);
+
+      // --- INSPECTED BODY DATA UPDATE (50ms interval) ---
+      const inspectDataInterval = setInterval(() => {
+        const body = inspectedBodyRef.current;
+        if (!body || activeToolRef.current !== "inspect") {
+          return;
+        }
+
+        // Check if body is still in the world
+        const allBodies = Matter.Composite.allBodies(engine.world);
+        if (!allBodies.includes(body)) {
+          inspectedBodyRef.current = null;
+          onInspectedBodyUpdateRef.current(null);
+          return;
+        }
+
+        const vx = body.velocity.x;
+        const vy = body.velocity.y;
+        const velMag = Math.sqrt(vx * vx + vy * vy);
+        const fx = body.force.x;
+        const fy = body.force.y;
+        const forceMag = Math.sqrt(fx * fx + fy * fy);
+
+        const data = {
+          id: body.id,
+          label: body.label || `Body ${body.id}`,
+          mass: body.mass,
+          posX: body.position.x,
+          posY: body.position.y,
+          velX: vx,
+          velY: vy,
+          velMag,
+          angle: body.angle,
+          kineticEnergy: 0.5 * body.mass * velMag * velMag,
+          forceX: fx,
+          forceY: fy,
+          forceMag,
+          timestamp: Date.now(),
+        };
+
+        setLocalInspectedBody(data);
+        onInspectedBodyUpdateRef.current(data);
+      }, 50);
+
       // Handle resize
       const handleResize = () => {
         const newW = container.clientWidth;
@@ -495,10 +654,13 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
 
       // Cleanup
       return () => {
+        clearInterval(inspectDataInterval);
         window.removeEventListener("keydown", handleKeyDown);
         window.removeEventListener("resize", handleResize);
         render.canvas.removeEventListener("mousedown", handleMouseDown);
         render.canvas.removeEventListener("mouseup", handleMouseUp);
+        render.canvas.removeEventListener("click", handleInspectClick);
+        Matter.Events.off(render, "afterRender");
         Matter.Render.stop(render);
         Matter.Runner.stop(runner);
         Matter.World.clear(engine.world, false);
@@ -659,6 +821,48 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
             }}
           >
             Click a second body to create {activeTool}
+          </div>
+        )}
+
+        {/* Inspected Body Info Card */}
+        {activeTool === "inspect" && localInspectedBody && (
+          <div
+            className="absolute z-20 pointer-events-none transition-all duration-75"
+            style={{
+              left: localInspectedBody.posX + 40,
+              top: localInspectedBody.posY - 40,
+              background: "rgba(18, 18, 26, 0.85)",
+              border: "1px solid var(--border-subtle)",
+              backdropFilter: "blur(12px)",
+              padding: "12px",
+              borderRadius: "8px",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+              minWidth: "160px",
+            }}
+          >
+            <div className="text-xs font-bold text-gray-300 mb-2 border-b border-gray-700 pb-1">
+              {localInspectedBody.label}
+            </div>
+            <div className="flex justify-between text-[11px] mb-1">
+              <span className="text-gray-500">Mass:</span>
+              <span className="text-white font-mono">{localInspectedBody.mass.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-[11px] mb-1">
+              <span className="text-gray-500">Velocity:</span>
+              <span className="text-cyan-400 font-mono">{localInspectedBody.velMag.toFixed(2)} px/t</span>
+            </div>
+            <div className="flex justify-between text-[11px] mb-1">
+              <span className="text-gray-500">Pos:</span>
+              <span className="text-white font-mono">
+                {Math.round(localInspectedBody.posX)}, {Math.round(localInspectedBody.posY)}
+              </span>
+            </div>
+            <div className="flex justify-between text-[11px]">
+              <span className="text-gray-500">Angle:</span>
+              <span className="text-white font-mono">
+                {((localInspectedBody.angle * 180) / Math.PI).toFixed(0)}°
+              </span>
+            </div>
           </div>
         )}
       </div>

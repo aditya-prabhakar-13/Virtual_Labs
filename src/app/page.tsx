@@ -15,12 +15,30 @@ export type ToolType =
   | "spring"
   | "pivot"
   | "delete"
-  | "grab";
+  | "grab"
+  | "inspect";
 
 export interface PhysicsCanvasHandle {
   togglePause: () => void;
   resetWorld: () => void;
   isPaused: () => boolean;
+}
+
+export interface InspectedBodyData {
+  id: number;
+  label: string;
+  mass: number;
+  posX: number;
+  posY: number;
+  velX: number;
+  velY: number;
+  velMag: number;
+  angle: number;
+  kineticEnergy: number;
+  forceX: number;
+  forceY: number;
+  forceMag: number;
+  timestamp: number;
 }
 
 export default function Home() {
@@ -29,6 +47,8 @@ export default function Home() {
   const [paused, setPaused] = useState(false);
   const [roomId, setRoomId] = useState<string | null>(null);
   const [isHost, setIsHost] = useState(false);
+  const [inspectedBodyData, setInspectedBodyData] = useState<InspectedBodyData | null>(null);
+  const [showAnalytics, setShowAnalytics] = useState(false);
 
   const handleTogglePause = useCallback(() => {
     if (canvasRef.current) {
@@ -41,6 +61,7 @@ export default function Home() {
     if (canvasRef.current) {
       canvasRef.current.resetWorld();
       setPaused(false);
+      setInspectedBodyData(null);
     }
   }, []);
 
@@ -60,13 +81,19 @@ export default function Home() {
 
   return (
     <main className="flex h-screen w-screen overflow-hidden" style={{ background: "var(--bg-primary)" }}>
-      <Toolbar activeTool={activeTool} onToolChange={setActiveTool} />
+      <Toolbar
+        activeTool={activeTool}
+        onToolChange={setActiveTool}
+        showAnalytics={showAnalytics}
+        onToggleAnalytics={() => setShowAnalytics((p) => !p)}
+      />
       <div className="flex-1 relative">
         <PhysicsCanvas
           ref={canvasRef}
           activeTool={activeTool}
           roomId={roomId}
           isHost={isHost}
+          onInspectedBodyUpdate={setInspectedBodyData}
         />
         <SimControls
           isPaused={paused}

@@ -6,6 +6,8 @@ import type { ToolType } from "@/app/page";
 interface ToolbarProps {
   activeTool: ToolType;
   onToolChange: (tool: ToolType) => void;
+  showAnalytics: boolean;
+  onToggleAnalytics: () => void;
 }
 
 interface ToolButtonProps {
@@ -62,7 +64,7 @@ function Divider() {
   );
 }
 
-export default function Toolbar({ activeTool, onToolChange }: ToolbarProps) {
+export default function Toolbar({ activeTool, onToolChange, showAnalytics, onToggleAnalytics }: ToolbarProps) {
   return (
     <div
       className="flex flex-col items-center py-4 px-2 gap-1.5 h-full shrink-0"
@@ -193,6 +195,27 @@ export default function Toolbar({ activeTool, onToolChange }: ToolbarProps) {
 
       <Divider />
 
+      {/* Inspect tool */}
+      <ToolButton
+        tool="inspect"
+        activeTool={activeTool}
+        onClick={onToolChange}
+        label="Inspect (I)"
+        icon={
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 5v-2" />
+            <path d="M12 21v-2" />
+            <path d="M5 12H3" />
+            <path d="M21 12h-2" />
+            <path d="M16.95 7.05l1.41-1.41" />
+            <path d="M5.64 18.36l1.41-1.41" />
+            <path d="M16.95 16.95l1.41 1.41" />
+            <path d="M5.64 5.64l1.41 1.41" />
+          </svg>
+        }
+      />
+
       {/* Delete tool */}
       <ToolButton
         tool="delete"
@@ -210,13 +233,31 @@ export default function Toolbar({ activeTool, onToolChange }: ToolbarProps) {
       {/* Spacer */}
       <div className="flex-1" />
 
+      {/* Analytics toggle */}
+      <button
+        onClick={onToggleAnalytics}
+        title="Toggle Analytics Panel"
+        className="flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-200"
+        style={{
+          background: showAnalytics ? "rgba(124, 58, 237, 0.15)" : "transparent",
+          border: showAnalytics ? "1px solid rgba(124, 58, 237, 0.4)" : "1px solid transparent",
+          color: showAnalytics ? "var(--accent-purple)" : "var(--text-secondary)",
+        }}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 3v18h18" />
+          <path d="M7 16l4-8 4 4 4-8" />
+        </svg>
+      </button>
+
       {/* Version label */}
       <span
-        className="text-[10px] font-mono"
+        className="text-[10px] font-mono mt-2"
         style={{ color: "var(--text-secondary)", opacity: 0.5 }}
       >
-        v0.1
+        v0.2
       </span>
     </div>
   );
 }
+
