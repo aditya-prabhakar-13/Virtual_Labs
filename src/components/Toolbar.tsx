@@ -67,7 +67,7 @@ function Divider() {
 export default function Toolbar({ activeTool, onToolChange, showAnalytics, onToggleAnalytics }: ToolbarProps) {
   return (
     <div
-      className="flex flex-col items-center py-4 px-2 gap-1.5 h-full shrink-0"
+      className="flex flex-col items-center py-4 px-2 gap-1.5 h-full shrink-0 relative z-50"
       style={{
         width: "60px",
         background: "rgba(18, 18, 26, 0.85)",

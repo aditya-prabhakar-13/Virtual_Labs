@@ -97,7 +97,7 @@ export default function AnalyticsPanel({ isOpen, data }: AnalyticsPanelProps) {
               <span className="text-sm font-mono text-cyan-400">{data.velMag.toFixed(2)}</span>
             </div>
             <div className="h-24 w-full bg-[#0a0a0f] rounded border border-gray-800/50 p-1 relative">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <LineChart data={history}>
                   <CartesianGrid stroke="#1a1a2e" vertical={false} />
                   <YAxis domain={["auto", "auto"]} hide />
@@ -121,7 +121,7 @@ export default function AnalyticsPanel({ isOpen, data }: AnalyticsPanelProps) {
               <span className="text-sm font-mono text-purple-400">{data.kineticEnergy.toFixed(2)}</span>
             </div>
             <div className="h-24 w-full bg-[#0a0a0f] rounded border border-gray-800/50 p-1 relative">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <LineChart data={history}>
                   <CartesianGrid stroke="#1a1a2e" vertical={false} />
                   <YAxis domain={["auto", "auto"]} hide />
@@ -145,7 +145,7 @@ export default function AnalyticsPanel({ isOpen, data }: AnalyticsPanelProps) {
               <span className="text-sm font-mono text-amber-400">{(data.forceMag * 1000).toFixed(4)}</span>
             </div>
             <div className="h-24 w-full bg-[#0a0a0f] rounded border border-gray-800/50 p-1 relative">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <LineChart data={history}>
                   <CartesianGrid stroke="#1a1a2e" vertical={false} />
                   <YAxis domain={["auto", "auto"]} hide />
