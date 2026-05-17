@@ -127,7 +127,7 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
       togglePause: () => {
         if (!runnerRef.current || !engineRef.current) return;
         if (pausedRef.current) {
-          Matter.Runner.start(runnerRef.current, engineRef.current);
+          Matter.Runner.run(runnerRef.current, engineRef.current);
           pausedRef.current = false;
         } else {
           Matter.Runner.stop(runnerRef.current);
@@ -141,7 +141,7 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
         addBoundaries(engineRef.current);
         pausedRef.current = false;
         if (runnerRef.current) {
-          Matter.Runner.start(runnerRef.current, engineRef.current);
+          Matter.Runner.run(runnerRef.current, engineRef.current);
         }
         // Broadcast reset action
         if (roomIdRef.current) {
@@ -603,7 +603,7 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
         if (e.code === "Space") {
           e.preventDefault();
           if (pausedRef.current) {
-            Matter.Runner.start(runnerRef.current!, engineRef.current!);
+            Matter.Runner.run(runnerRef.current!, engineRef.current!);
             pausedRef.current = false;
           } else {
             Matter.Runner.stop(runnerRef.current!);
@@ -617,7 +617,7 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
           Matter.Composite.clear(engine.world, false, true);
           addBoundaries(engine);
           pausedRef.current = false;
-          if (runnerRef.current) Matter.Runner.start(runnerRef.current, engine);
+          if (runnerRef.current) Matter.Runner.run(runnerRef.current, engine);
           window.dispatchEvent(
             new CustomEvent("physics-pause-toggle", { detail: { paused: false } })
           );
