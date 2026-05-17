@@ -1,13 +1,14 @@
 # STATE.md
 
 ## Current Position
-- **Phase**: 3 (completed)
-- **Task**: All tasks complete
-- **Status**: Verified
+- **Phase**: 4 — Persistence & Experiment Library
+- **Task**: Planning complete
+- **Status**: Ready for execution
 
-## Last Session Summary
-Phase 3 executed successfully. 2 plans, 2 tasks completed. Added Vector Overlays on Canvas and Real-Time Analytics Dashboard using Recharts.
+## Recent Context
+- Created 3 execution plans for Phase 4 across 2 waves.
+- Wave 1: Database Setup & API Routes (4.1), Physics Serialization (4.2)
+- Wave 2: Experiment Library UI (4.3)
 
 ## Next Steps
-1. Proceed to Phase 4
-2. /plan 4
+1. `/execute 4`
