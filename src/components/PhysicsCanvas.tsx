@@ -9,7 +9,7 @@ import React, {
   useCallback,
 } from "react";
 import Matter from "matter-js";
-import type { ToolType, PhysicsCanvasHandle, InspectedBodyData } from "@/app/page";
+import type { ToolType, PhysicsCanvasHandle, InspectedBodyData, WorldData } from "@/app/page";
 import {
   getSocket,
   type PhysicsSnapshot,
@@ -23,6 +23,8 @@ interface PhysicsCanvasProps {
   roomId: string | null;
   isHost: boolean;
   onInspectedBodyUpdate: (data: InspectedBodyData | null) => void;
+  onWorldUpdate: (data: WorldData) => void;
+  showVectors: boolean;
 }
 
 const GROUND_LABEL = "__ground__";
@@ -37,7 +39,19 @@ function isStaticBoundary(body: Matter.Body) {
   );
 }
 
-// Shape colors palette (kept outside component for reuse)
+// Returns the point-to-line-segment distance for constraint click detection
+function distToConstraint(c: Matter.Constraint, x: number, y: number): number {
+  const pA = c.bodyA ? c.bodyA.position : c.pointA;
+  const pB = c.bodyB ? c.bodyB.position : c.pointB;
+  if (!pA || !pB) return Infinity;
+  const dx = pB.x - pA.x;
+  const dy = pB.y - pA.y;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(x - pA.x, y - pA.y);
+  const t = Math.max(0, Math.min(1, ((x - pA.x) * dx + (y - pA.y) * dy) / lenSq));
+  return Math.hypot(x - (pA.x + t * dx), y - (pA.y + t * dy));
+}
+
 const shapeColors = [
   { fill: "#3b82f6", stroke: "#60a5fa" },
   { fill: "#8b5cf6", stroke: "#a78bfa" },
@@ -52,7 +66,6 @@ function randomColor() {
   return shapeColors[Math.floor(Math.random() * shapeColors.length)];
 }
 
-// Helper to draw an arrow on canvas
 function drawArrow(
   ctx: CanvasRenderingContext2D,
   fromX: number, fromY: number,
@@ -71,13 +84,11 @@ function drawArrow(
   ctx.lineWidth = lineWidth;
   ctx.globalAlpha = 0.85;
 
-  // Line
   ctx.beginPath();
   ctx.moveTo(fromX, fromY);
   ctx.lineTo(toX, toY);
   ctx.stroke();
 
-  // Arrowhead
   ctx.beginPath();
   ctx.moveTo(toX, toY);
   ctx.lineTo(toX - headLen * Math.cos(angle - Math.PI / 6), toY - headLen * Math.sin(angle - Math.PI / 6));
@@ -89,7 +100,7 @@ function drawArrow(
 }
 
 const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
-  ({ activeTool, roomId, isHost, onInspectedBodyUpdate }, ref) => {
+  ({ activeTool, roomId, isHost, onInspectedBodyUpdate, onWorldUpdate, showVectors }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const engineRef = useRef<Matter.Engine | null>(null);
     const renderRef = useRef<Matter.Render | null>(null);
@@ -106,44 +117,52 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
     const inspectedBodyRef = useRef<Matter.Body | null>(null);
     const onInspectedBodyUpdateRef = useRef(onInspectedBodyUpdate);
     onInspectedBodyUpdateRef.current = onInspectedBodyUpdate;
+    const onWorldUpdateRef = useRef(onWorldUpdate);
+    onWorldUpdateRef.current = onWorldUpdate;
+    const showVectorsRef = useRef(showVectors);
+    showVectorsRef.current = showVectors;
 
-    // Keep refs in sync with props
     useEffect(() => {
       activeToolRef.current = activeTool;
       constraintFirstBodyRef.current = null;
       setFirstBodySelected(false);
     }, [activeTool]);
 
-    useEffect(() => {
-      roomIdRef.current = roomId;
-    }, [roomId]);
+    useEffect(() => { roomIdRef.current = roomId; }, [roomId]);
+    useEffect(() => { isHostRef.current = isHost; }, [isHost]);
 
-    useEffect(() => {
-      isHostRef.current = isHost;
-    }, [isHost]);
+    // Helper to find a body by id in the current world
+    const getBodyById = useCallback((id: number) => {
+      if (!engineRef.current) return null;
+      return Matter.Composite.allBodies(engineRef.current.world).find(b => b.id === id) ?? null;
+    }, []);
 
-    // Expose control methods via ref
+    // Helper to find a constraint by id in the current world
+    const getConstraintById = useCallback((id: number) => {
+      if (!engineRef.current) return null;
+      return Matter.Composite.allConstraints(engineRef.current.world).find(c => c.id === id) ?? null;
+    }, []);
+
     useImperativeHandle(ref, () => ({
+      // --- Task 1: Pause via timeScale (reliable freeze) ---
       togglePause: () => {
-        if (!runnerRef.current || !engineRef.current) return;
+        if (!engineRef.current) return;
         if (pausedRef.current) {
-          Matter.Runner.run(runnerRef.current, engineRef.current);
+          engineRef.current.timing.timeScale = 1;
           pausedRef.current = false;
         } else {
-          Matter.Runner.stop(runnerRef.current);
+          engineRef.current.timing.timeScale = 0;
           pausedRef.current = true;
         }
       },
+
       resetWorld: () => {
         if (!engineRef.current) return;
         const world = engineRef.current.world;
         Matter.Composite.clear(world, false, true);
         addBoundaries(engineRef.current);
         pausedRef.current = false;
-        if (runnerRef.current) {
-          Matter.Runner.run(runnerRef.current, engineRef.current);
-        }
-        // Broadcast reset action
+        engineRef.current.timing.timeScale = 1;
         if (roomIdRef.current) {
           const socket = getSocket();
           socket.emit("physics:action", {
@@ -152,7 +171,9 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
           });
         }
       },
+
       isPaused: () => pausedRef.current,
+
       getSnapshot: () => {
         if (!engineRef.current) return null;
         const engine = engineRef.current;
@@ -193,13 +214,15 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
 
         return { bodies, constraints, timestamp: Date.now() } as PhysicsSnapshot;
       },
+
       loadSnapshot: (snapshot: PhysicsSnapshot) => {
         if (!engineRef.current) return;
         const engine = engineRef.current;
         Matter.Composite.clear(engine.world, false, true);
         addBoundaries(engine);
+        pausedRef.current = false;
+        engine.timing.timeScale = 1;
 
-        // Recreate bodies
         const createdBodies = new Map<number, Matter.Body>();
         snapshot.bodies.forEach((bs) => {
           let body: Matter.Body | null = null;
@@ -216,7 +239,6 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
               render: { fillStyle: bs.fillStyle, strokeStyle: bs.strokeStyle, lineWidth: 2 },
             });
           } else {
-            // rectangle or wall
             body = Matter.Bodies.rectangle(bs.posX, bs.posY, bs.isStatic ? 120 : 50, bs.isStatic ? 20 : 50, {
               isStatic: bs.isStatic,
               restitution: 0.4, friction: 0.4,
@@ -225,7 +247,6 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
           }
 
           if (body) {
-            // Force the original ID so constraints can link
             (body as any).id = bs.id;
             body.label = `synced_${bs.id}`;
             Matter.Body.setAngle(body, bs.angle);
@@ -236,7 +257,6 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
           }
         });
 
-        // Recreate constraints
         snapshot.constraints.forEach((cs) => {
           const bodyA = cs.bodyAId ? createdBodies.get(cs.bodyAId) : undefined;
           const bodyB = cs.bodyBId ? createdBodies.get(cs.bodyBId) : undefined;
@@ -270,6 +290,55 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
           });
         }
       },
+
+      // --- Task 3 & 4: Body property setters ---
+      setBodyMass: (id, mass) => {
+        const body = getBodyById(id);
+        if (body) Matter.Body.setMass(body, Math.max(0.01, mass));
+      },
+      setBodyAngle: (id, angle) => {
+        const body = getBodyById(id);
+        if (body) Matter.Body.setAngle(body, angle);
+      },
+      setBodyVelocity: (id, vx, vy) => {
+        const body = getBodyById(id);
+        if (body) Matter.Body.setVelocity(body, { x: vx, y: vy });
+      },
+      applyBodyForce: (id, fx, fy) => {
+        const body = getBodyById(id);
+        if (body) Matter.Body.applyForce(body, body.position, { x: fx, y: fy });
+      },
+      setBodyFriction: (id, friction, frictionStatic) => {
+        const body = getBodyById(id);
+        if (body) {
+          body.friction = Math.max(0, friction);
+          body.frictionStatic = Math.max(0, frictionStatic);
+        }
+      },
+      setBodyRestitution: (id, restitution) => {
+        const body = getBodyById(id);
+        if (body) body.restitution = Math.max(0, Math.min(1, restitution));
+      },
+
+      // --- Task 5: Constraint property setters ---
+      setConstraintLength: (id, length) => {
+        const c = getConstraintById(id);
+        if (c) c.length = Math.max(0, length);
+      },
+      setConstraintStiffness: (id, stiffness) => {
+        const c = getConstraintById(id);
+        if (c) c.stiffness = Math.max(0.001, Math.min(1, stiffness));
+      },
+
+      // --- Task 7: Air damping and constraint damping ---
+      setBodyFrictionAir: (id, frictionAir) => {
+        const body = getBodyById(id);
+        if (body) body.frictionAir = Math.max(0, Math.min(1, frictionAir));
+      },
+      setConstraintDamping: (id, damping) => {
+        const c = getConstraintById(id);
+        if (c) c.damping = Math.max(0, damping);
+      },
     }));
 
     const addBoundaries = useCallback((engine: Matter.Engine) => {
@@ -296,7 +365,6 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
       Matter.Composite.add(engine.world, [ground, wallLeft, wallRight]);
     }, []);
 
-    // --- Helper: Create a body from a spawn action payload ---
     const spawnBodyFromAction = useCallback(
       (engine: Matter.Engine, payload: any) => {
         const { shapeType, x, y, fillStyle, strokeStyle, bodyId } = payload;
@@ -304,20 +372,17 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
 
         if (shapeType === "circle") {
           body = Matter.Bodies.circle(x, y, 25, {
-            restitution: 0.5,
-            friction: 0.3,
+            restitution: 0.5, friction: 0.3,
             render: { fillStyle, strokeStyle, lineWidth: 2 },
           });
         } else if (shapeType === "rectangle") {
           body = Matter.Bodies.rectangle(x, y, 50, 50, {
-            restitution: 0.4,
-            friction: 0.4,
+            restitution: 0.4, friction: 0.4,
             render: { fillStyle, strokeStyle, lineWidth: 2 },
           });
         } else if (shapeType === "triangle") {
           body = Matter.Bodies.polygon(x, y, 3, 30, {
-            restitution: 0.3,
-            friction: 0.5,
+            restitution: 0.3, friction: 0.5,
             render: { fillStyle, strokeStyle, lineWidth: 2 },
           });
         } else if (shapeType === "wall") {
@@ -328,7 +393,6 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
         }
 
         if (body) {
-          // Tag body with the original ID for cross-client reference
           body.label = `synced_${bodyId}`;
           Matter.Composite.add(engine.world, body);
         }
@@ -344,13 +408,11 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
       const w = container.clientWidth;
       const h = container.clientHeight;
 
-      // Create engine
       const engine = Matter.Engine.create({
         gravity: { x: 0, y: 1, scale: 0.001 },
       });
       engineRef.current = engine;
 
-      // Create renderer
       const render = Matter.Render.create({
         element: container,
         engine: engine,
@@ -364,10 +426,8 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
       });
       renderRef.current = render;
 
-      // Add boundaries
       addBoundaries(engine);
 
-      // Mouse interaction
       const mouse = Matter.Mouse.create(render.canvas);
       const mouseConstraint = Matter.MouseConstraint.create(engine, {
         mouse: mouse,
@@ -384,15 +444,17 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
       Matter.Composite.add(engine.world, mouseConstraint);
       render.mouse = mouse;
 
-      // --- Click handler for spawning shapes / constraints / delete ---
       let mouseDownPos: { x: number; y: number } | null = null;
 
+      // --- Task 2: Grab fix — bypass custom logic entirely in grab mode ---
       const handleMouseDown = (e: MouseEvent) => {
+        if (activeToolRef.current === "grab") return;
         const rect = render.canvas.getBoundingClientRect();
         mouseDownPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
       };
 
       const handleMouseUp = (e: MouseEvent) => {
+        if (activeToolRef.current === "grab") return;
         if (!mouseDownPos) return;
 
         const rect = render.canvas.getBoundingClientRect();
@@ -438,8 +500,6 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
 
           if (body) {
             Matter.Composite.add(engine.world, body);
-
-            // Broadcast spawn action
             if (roomIdRef.current) {
               const socket = getSocket();
               socket.emit("physics:action", {
@@ -447,11 +507,8 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
                 action: {
                   type: "spawn",
                   payload: {
-                    shapeType: tool,
-                    x: worldX,
-                    y: worldY,
-                    fillStyle: color.fill,
-                    strokeStyle: color.stroke,
+                    shapeType: tool, x: worldX, y: worldY,
+                    fillStyle: color.fill, strokeStyle: color.stroke,
                     bodyId: body.id,
                   },
                 } as PhysicsAction,
@@ -475,22 +532,18 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
                 Matter.Composite.remove(engine.world, c);
               }
             }
-            // Broadcast delete
             if (roomIdRef.current) {
               const socket = getSocket();
               socket.emit("physics:action", {
                 roomId: roomIdRef.current,
-                action: {
-                  type: "delete",
-                  payload: { bodyId: b.id },
-                } as PhysicsAction,
+                action: { type: "delete", payload: { bodyId: b.id } } as PhysicsAction,
               });
             }
             Matter.Composite.remove(engine.world, b);
           }
         }
 
-        // --- CONSTRAINT TOOLS (rope, spring) ---
+        // --- CONSTRAINT TOOLS ---
         if (tool === "rope" || tool === "spring") {
           const bodiesAtPoint = Matter.Query.point(
             Matter.Composite.allBodies(engine.world),
@@ -519,9 +572,10 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
                   type: "line",
                 },
               });
+              // Tag constraint type for ObjectPanel identification
+              (constraint as any)._constraintType = tool;
               Matter.Composite.add(engine.world, constraint);
 
-              // Broadcast constraint
               if (roomIdRef.current) {
                 const socket = getSocket();
                 socket.emit("physics:action", {
@@ -530,8 +584,7 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
                     type: "constraint",
                     payload: {
                       constraintType: tool,
-                      bodyAId: bodyA.id,
-                      bodyBId: clickedBody.id,
+                      bodyAId: bodyA.id, bodyBId: clickedBody.id,
                       stiffness, damping,
                     },
                   } as PhysicsAction,
@@ -562,6 +615,7 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
               length: 0, stiffness: 1,
               render: { strokeStyle: "rgba(251, 191, 36, 0.8)", lineWidth: 2 },
             });
+            (constraint as any)._constraintType = "pivot";
             Matter.Composite.add(engine.world, constraint);
 
             if (roomIdRef.current) {
@@ -588,10 +642,9 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
       render.canvas.addEventListener("mousedown", handleMouseDown);
       render.canvas.addEventListener("mouseup", handleMouseUp);
 
-      // Disable mouse constraint when not in grab mode
+      // Prevent MouseConstraint from dragging when NOT in grab mode
       Matter.Events.on(mouseConstraint, "startdrag", () => {
-        const tool = activeToolRef.current;
-        if (tool !== "grab") {
+        if (activeToolRef.current !== "grab") {
           mouseConstraint.constraint.bodyB = null as any;
           (mouseConstraint as any).body = null;
         }
@@ -600,24 +653,28 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
       // Keyboard shortcuts
       const handleKeyDown = (e: KeyboardEvent) => {
         if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+        // --- Task 1: Space bar pause via timeScale ---
         if (e.code === "Space") {
           e.preventDefault();
+          if (!engineRef.current) return;
           if (pausedRef.current) {
-            Matter.Runner.run(runnerRef.current!, engineRef.current!);
+            engineRef.current.timing.timeScale = 1;
             pausedRef.current = false;
           } else {
-            Matter.Runner.stop(runnerRef.current!);
+            engineRef.current.timing.timeScale = 0;
             pausedRef.current = true;
           }
           window.dispatchEvent(
             new CustomEvent("physics-pause-toggle", { detail: { paused: pausedRef.current } })
           );
         }
+
         if (e.code === "KeyR" && !e.ctrlKey && !e.metaKey) {
           Matter.Composite.clear(engine.world, false, true);
           addBoundaries(engine);
           pausedRef.current = false;
-          if (runnerRef.current) Matter.Runner.run(runnerRef.current, engine);
+          engine.timing.timeScale = 1;
           window.dispatchEvent(
             new CustomEvent("physics-pause-toggle", { detail: { paused: false } })
           );
@@ -632,16 +689,16 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
       };
       window.addEventListener("keydown", handleKeyDown);
 
-      // Start
       Matter.Render.run(render);
       const runner = Matter.Runner.create();
       runnerRef.current = runner;
       Matter.Runner.run(runner, engine);
 
-      // --- VECTOR OVERLAY: afterRender draws velocity/force arrows ---
+      // --- Task 6: afterRender — vectors for inspect tool OR global showVectors ---
       Matter.Events.on(render, "afterRender", () => {
         const tool = activeToolRef.current;
-        if (tool !== "inspect") return;
+        const showAll = showVectorsRef.current;
+        if (tool !== "inspect" && !showAll) return;
 
         const ctx = render.context as CanvasRenderingContext2D;
         const allBodies = Matter.Composite.allBodies(engine.world);
@@ -659,23 +716,18 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
           const vy = body.velocity.y;
           const velMag = Math.sqrt(vx * vx + vy * vy);
 
-          // Velocity arrow (cyan) — scale by 12 for visibility
           if (velMag > 0.3) {
-            const scale = 12;
-            drawArrow(ctx, px, py, px + vx * scale, py + vy * scale, "#00d2ff", 2);
+            drawArrow(ctx, px, py, px + vx * 12, py + vy * 12, "#00d2ff", 2);
           }
 
-          // Force arrow (orange) — body.force is per-tick, scale by 5000
           const fx = body.force.x;
           const fy = body.force.y;
-          const forceMag = Math.sqrt(fx * fx + fy * fy);
-          if (forceMag > 0.000001) {
-            const fScale = 5000;
-            drawArrow(ctx, px, py, px + fx * fScale, py + fy * fScale, "#f59e0b", 2);
+          if (Math.sqrt(fx * fx + fy * fy) > 0.000001) {
+            drawArrow(ctx, px, py, px + fx * 5000, py + fy * 5000, "#f59e0b", 2);
           }
 
-          // Highlight inspected body with pulsing ring
-          if (inspectedBodyRef.current && body.id === inspectedBodyRef.current.id) {
+          // Inspected body highlight ring (only in inspect mode)
+          if (tool === "inspect" && inspectedBodyRef.current && body.id === inspectedBodyRef.current.id) {
             const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 200);
             ctx.strokeStyle = `rgba(0, 210, 255, ${0.4 + pulse * 0.4})`;
             ctx.lineWidth = 3;
@@ -689,7 +741,7 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
         ctx.restore();
       });
 
-      // --- INSPECT: click to select a body ---
+      // --- Inspect: click to select a body OR a spring constraint ---
       const handleInspectClick = (e: MouseEvent) => {
         if (activeToolRef.current !== "inspect") return;
 
@@ -706,21 +758,25 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
         if (clicked) {
           inspectedBodyRef.current = clicked;
         } else {
-          inspectedBodyRef.current = null;
-          setLocalInspectedBody(null);
-          onInspectedBodyUpdateRef.current(null);
+          // Check if near a constraint line (for Task 5 spring selection)
+          const allConstraints = Matter.Composite.allConstraints(engine.world)
+            .filter(c => c.label !== "Mouse Constraint");
+          const nearby = allConstraints.find(c => distToConstraint(c, x, y) < 12);
+          if (!nearby) {
+            inspectedBodyRef.current = null;
+            setLocalInspectedBody(null);
+            onInspectedBodyUpdateRef.current(null);
+          }
+          // Constraint clicks are handled at the ObjectPanel level via world data
         }
       };
       render.canvas.addEventListener("click", handleInspectClick);
 
-      // --- INSPECTED BODY DATA UPDATE (50ms interval) ---
+      // --- Inspected body data update (50ms) ---
       const inspectDataInterval = setInterval(() => {
         const body = inspectedBodyRef.current;
-        if (!body || activeToolRef.current !== "inspect") {
-          return;
-        }
+        if (!body || activeToolRef.current !== "inspect") return;
 
-        // Check if body is still in the world
         const allBodies = Matter.Composite.allBodies(engine.world);
         if (!allBodies.includes(body)) {
           inspectedBodyRef.current = null;
@@ -735,26 +791,60 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
         const fy = body.force.y;
         const forceMag = Math.sqrt(fx * fx + fy * fy);
 
-        const data = {
+        const data: InspectedBodyData = {
           id: body.id,
           label: body.label || `Body ${body.id}`,
           mass: body.mass,
           posX: body.position.x,
           posY: body.position.y,
-          velX: vx,
-          velY: vy,
-          velMag,
+          velX: vx, velY: vy, velMag,
           angle: body.angle,
           kineticEnergy: 0.5 * body.mass * velMag * velMag,
-          forceX: fx,
-          forceY: fy,
-          forceMag,
+          forceX: fx, forceY: fy, forceMag,
           timestamp: Date.now(),
         };
 
         setLocalInspectedBody(data);
         onInspectedBodyUpdateRef.current(data);
       }, 50);
+
+      // --- Task 3: World data update for ObjectPanel (100ms) ---
+      const worldUpdateInterval = setInterval(() => {
+        if (!onWorldUpdateRef.current) return;
+
+        const allBodies = Matter.Composite.allBodies(engine.world)
+          .filter(b => !isStaticBoundary(b))
+          .map(b => ({
+            id: b.id,
+            label: b.label || `Body ${b.id}`,
+            mass: b.mass,
+            friction: b.friction,
+            frictionStatic: b.frictionStatic,
+            frictionAir: b.frictionAir,
+            restitution: b.restitution,
+            posX: b.position.x,
+            posY: b.position.y,
+            velX: b.velocity.x,
+            velY: b.velocity.y,
+            angle: b.angle,
+            isStatic: b.isStatic,
+          }));
+
+        const allConstraints = Matter.Composite.allConstraints(engine.world)
+          .filter(c => c.label !== "Mouse Constraint")
+          .map(c => ({
+            id: c.id,
+            label: c.label || `Constraint ${c.id}`,
+            length: c.length ?? 0,
+            stiffness: c.stiffness,
+            damping: c.damping,
+            bodyAId: c.bodyA?.id,
+            bodyBId: c.bodyB?.id,
+            constraintType: (c as any)._constraintType || "rope",
+          }));
+
+        onWorldUpdateRef.current({ bodies: allBodies, constraints: allConstraints });
+      }, 100);
 
       // Handle resize
       const handleResize = () => {
@@ -769,9 +859,9 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
       };
       window.addEventListener("resize", handleResize);
 
-      // Cleanup
       return () => {
         clearInterval(inspectDataInterval);
+        clearInterval(worldUpdateInterval);
         window.removeEventListener("keydown", handleKeyDown);
         window.removeEventListener("resize", handleResize);
         render.canvas.removeEventListener("mousedown", handleMouseDown);
@@ -786,21 +876,20 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
       };
     }, [addBoundaries, spawnBodyFromAction]);
 
-    // --- MULTIPLAYER SYNC EFFECT ---
+    // --- MULTIPLAYER SYNC ---
     useEffect(() => {
       if (!roomId || !engineRef.current) return;
 
       const engine = engineRef.current;
       const socket = getSocket();
 
-      // HOST: broadcast physics snapshot at ~20Hz
       if (isHost) {
         syncIntervalRef.current = setInterval(() => {
           if (pausedRef.current || !engineRef.current) return;
 
           const allBodies = Matter.Composite.allBodies(engine.world);
           const round = (val: number) => Math.round(val * 100) / 100;
-          
+
           const bodies: BodySnapshot[] = allBodies
             .filter((b) => !isStaticBoundary(b))
             .map((b) => ({
@@ -819,29 +908,21 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
               strokeStyle: (b.render as any).strokeStyle || "#60a5fa",
             }));
 
-          const snapshot: PhysicsSnapshot = {
-            bodies,
-            constraints: [],
-            timestamp: Date.now(),
-          };
-
-          socket.emit("physics:snapshot", { roomId, snapshot });
-        }, 50); // 20Hz
+          socket.emit("physics:snapshot", {
+            roomId,
+            snapshot: { bodies, constraints: [], timestamp: Date.now() } as PhysicsSnapshot,
+          });
+        }, 50);
       }
 
-      // NON-HOST: receive physics snapshots and update local bodies
       const handleSnapshot = (snapshot: PhysicsSnapshot) => {
         if (isHostRef.current || !engineRef.current) return;
-
         const world = engineRef.current.world;
-        const localBodies = Matter.Composite.allBodies(world).filter(
-          (b) => !isStaticBoundary(b)
-        );
+        const localBodies = Matter.Composite.allBodies(world).filter(b => !isStaticBoundary(b));
 
         for (const remote of snapshot.bodies) {
-          const local = localBodies.find((b) => b.id === remote.id || b.label === `synced_${remote.id}`);
+          const local = localBodies.find(b => b.id === remote.id || b.label === `synced_${remote.id}`);
           if (local) {
-            // Update existing body position/velocity
             Matter.Body.setPosition(local, { x: remote.posX, y: remote.posY });
             Matter.Body.setAngle(local, remote.angle);
             Matter.Body.setVelocity(local, { x: remote.velX, y: remote.velY });
@@ -850,7 +931,6 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
         }
       };
 
-      // Receive actions from other clients
       const handleAction = (action: PhysicsAction) => {
         if (!engineRef.current) return;
         const eng = engineRef.current;
@@ -859,24 +939,18 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
           spawnBodyFromAction(eng, action.payload);
         } else if (action.type === "delete") {
           const bodies = Matter.Composite.allBodies(eng.world);
-          const target = bodies.find(
-            (b) => b.id === action.payload.bodyId || b.label === `synced_${action.payload.bodyId}`
-          );
+          const target = bodies.find(b => b.id === action.payload.bodyId || b.label === `synced_${action.payload.bodyId}`);
           if (target && !isStaticBoundary(target)) {
             const constraints = Matter.Composite.allConstraints(eng.world);
             for (const c of constraints) {
-              if (c.bodyA === target || c.bodyB === target) {
-                Matter.Composite.remove(eng.world, c);
-              }
+              if (c.bodyA === target || c.bodyB === target) Matter.Composite.remove(eng.world, c);
             }
             Matter.Composite.remove(eng.world, target);
           }
         } else if (action.type === "constraint") {
           const p = action.payload;
           const bodies = Matter.Composite.allBodies(eng.world);
-          const bodyA = bodies.find(
-            (b) => b.id === p.bodyAId || b.label === `synced_${p.bodyAId}`
-          );
+          const bodyA = bodies.find(b => b.id === p.bodyAId || b.label === `synced_${p.bodyAId}`);
 
           if (p.constraintType === "pivot" && bodyA) {
             const c = Matter.Constraint.create({
@@ -885,22 +959,21 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
               length: 0, stiffness: 1,
               render: { strokeStyle: "rgba(251, 191, 36, 0.8)", lineWidth: 2 },
             });
+            (c as any)._constraintType = "pivot";
             Matter.Composite.add(eng.world, c);
           } else if (bodyA) {
-            const bodyB = bodies.find(
-              (b) => b.id === p.bodyBId || b.label === `synced_${p.bodyBId}`
-            );
+            const bodyB = bodies.find(b => b.id === p.bodyBId || b.label === `synced_${p.bodyBId}`);
             if (bodyB) {
               const c = Matter.Constraint.create({
                 bodyA, bodyB,
-                stiffness: p.stiffness,
-                damping: p.damping,
+                stiffness: p.stiffness, damping: p.damping,
                 render: {
                   strokeStyle: p.constraintType === "rope" ? "rgba(148, 163, 184, 0.8)" : "rgba(34, 197, 94, 0.8)",
                   lineWidth: p.constraintType === "rope" ? 2 : 3,
                   type: "line",
                 },
               });
+              (c as any)._constraintType = p.constraintType;
               Matter.Composite.add(eng.world, c);
             }
           }
@@ -943,7 +1016,6 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
           </div>
         )}
 
-        {/* Inspected Body Info Card */}
         {activeTool === "inspect" && localInspectedBody && (
           <div
             className="absolute z-20 pointer-events-none transition-all duration-75"

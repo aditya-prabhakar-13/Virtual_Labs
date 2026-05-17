@@ -5,6 +5,7 @@ import Toolbar from "@/components/Toolbar";
 import SimControls from "@/components/SimControls";
 import RoomManager from "@/components/RoomManager";
 import AnalyticsPanel from "@/components/AnalyticsPanel";
+import ObjectPanel from "@/components/ObjectPanel";
 import LibraryModal from "@/components/LibraryModal";
 import { useState, useRef, useCallback } from "react";
 
@@ -26,6 +27,16 @@ export interface PhysicsCanvasHandle {
   isPaused: () => boolean;
   getSnapshot: () => any;
   loadSnapshot: (snapshot: any) => void;
+  setBodyMass: (id: number, mass: number) => void;
+  setBodyAngle: (id: number, angle: number) => void;
+  setBodyVelocity: (id: number, vx: number, vy: number) => void;
+  applyBodyForce: (id: number, fx: number, fy: number) => void;
+  setBodyFriction: (id: number, friction: number, frictionStatic: number) => void;
+  setBodyRestitution: (id: number, restitution: number) => void;
+  setBodyFrictionAir: (id: number, frictionAir: number) => void;
+  setConstraintLength: (id: number, length: number) => void;
+  setConstraintStiffness: (id: number, stiffness: number) => void;
+  setConstraintDamping: (id: number, damping: number) => void;
 }
 
 export interface InspectedBodyData {
@@ -45,6 +56,40 @@ export interface InspectedBodyData {
   timestamp: number;
 }
 
+export interface BodyListItem {
+  id: number;
+  label: string;
+  mass: number;
+  friction: number;
+  frictionStatic: number;
+  frictionAir: number;
+  restitution: number;
+  posX: number;
+  posY: number;
+  velX: number;
+  velY: number;
+  angle: number;
+  isStatic: boolean;
+}
+
+export interface ConstraintListItem {
+  id: number;
+  label: string;
+  length: number;
+  stiffness: number;
+  damping: number;
+  bodyAId?: number;
+  bodyBId?: number;
+  constraintType: string;
+}
+
+export interface WorldData {
+  bodies: BodyListItem[];
+  constraints: ConstraintListItem[];
+}
+
+const EMPTY_WORLD: WorldData = { bodies: [], constraints: [] };
+
 export default function Home() {
   const [activeTool, setActiveTool] = useState<ToolType>("grab");
   const canvasRef = useRef<PhysicsCanvasHandle>(null);
@@ -53,7 +98,10 @@ export default function Home() {
   const [isHost, setIsHost] = useState(false);
   const [inspectedBodyData, setInspectedBodyData] = useState<InspectedBodyData | null>(null);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showObjectPanel, setShowObjectPanel] = useState(false);
+  const [showVectors, setShowVectors] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
+  const [worldData, setWorldData] = useState<WorldData>(EMPTY_WORLD);
 
   const handleTogglePause = useCallback(() => {
     if (canvasRef.current) {
@@ -89,7 +137,7 @@ export default function Home() {
     const name = prompt("Enter a name for this scenario:");
     if (!name) return;
     const description = prompt("Enter a description (optional):") || "";
-    
+
     const snapshot = canvasRef.current.getSnapshot();
     if (!snapshot) {
       alert("Failed to capture snapshot.");
@@ -128,6 +176,38 @@ export default function Home() {
     }
   };
 
+  // Delegators from ObjectPanel → canvas handle
+  const handleSetBodyMass = useCallback((id: number, mass: number) => {
+    canvasRef.current?.setBodyMass(id, mass);
+  }, []);
+  const handleSetBodyAngle = useCallback((id: number, angle: number) => {
+    canvasRef.current?.setBodyAngle(id, angle);
+  }, []);
+  const handleSetBodyVelocity = useCallback((id: number, vx: number, vy: number) => {
+    canvasRef.current?.setBodyVelocity(id, vx, vy);
+  }, []);
+  const handleApplyBodyForce = useCallback((id: number, fx: number, fy: number) => {
+    canvasRef.current?.applyBodyForce(id, fx, fy);
+  }, []);
+  const handleSetBodyFriction = useCallback((id: number, f: number, fs: number) => {
+    canvasRef.current?.setBodyFriction(id, f, fs);
+  }, []);
+  const handleSetBodyRestitution = useCallback((id: number, v: number) => {
+    canvasRef.current?.setBodyRestitution(id, v);
+  }, []);
+  const handleSetConstraintLength = useCallback((id: number, length: number) => {
+    canvasRef.current?.setConstraintLength(id, length);
+  }, []);
+  const handleSetConstraintStiffness = useCallback((id: number, stiffness: number) => {
+    canvasRef.current?.setConstraintStiffness(id, stiffness);
+  }, []);
+  const handleSetBodyFrictionAir = useCallback((id: number, frictionAir: number) => {
+    canvasRef.current?.setBodyFrictionAir(id, frictionAir);
+  }, []);
+  const handleSetConstraintDamping = useCallback((id: number, damping: number) => {
+    canvasRef.current?.setConstraintDamping(id, damping);
+  }, []);
+
   return (
     <main className="flex h-screen w-screen overflow-hidden" style={{ background: "var(--bg-primary)" }}>
       <Toolbar
@@ -135,6 +215,10 @@ export default function Home() {
         onToolChange={setActiveTool}
         showAnalytics={showAnalytics}
         onToggleAnalytics={() => setShowAnalytics((p) => !p)}
+        showObjectPanel={showObjectPanel}
+        onToggleObjectPanel={() => setShowObjectPanel((p) => !p)}
+        showVectors={showVectors}
+        onToggleVectors={() => setShowVectors((p) => !p)}
       />
       <div className="flex-1 relative">
         <PhysicsCanvas
@@ -143,6 +227,8 @@ export default function Home() {
           roomId={roomId}
           isHost={isHost}
           onInspectedBodyUpdate={setInspectedBodyData}
+          onWorldUpdate={setWorldData}
+          showVectors={showVectors}
         />
         <SimControls
           isPaused={paused}
@@ -155,6 +241,20 @@ export default function Home() {
           onRoomJoined={handleRoomJoined}
           onRoomLeft={handleRoomLeft}
           onHostPromoted={handleHostPromoted}
+        />
+        <ObjectPanel
+          isOpen={showObjectPanel}
+          worldData={worldData}
+          onSetBodyMass={handleSetBodyMass}
+          onSetBodyAngle={handleSetBodyAngle}
+          onSetBodyVelocity={handleSetBodyVelocity}
+          onApplyBodyForce={handleApplyBodyForce}
+          onSetBodyFriction={handleSetBodyFriction}
+          onSetBodyRestitution={handleSetBodyRestitution}
+          onSetConstraintLength={handleSetConstraintLength}
+          onSetConstraintStiffness={handleSetConstraintStiffness}
+          onSetBodyFrictionAir={handleSetBodyFrictionAir}
+          onSetConstraintDamping={handleSetConstraintDamping}
         />
         <AnalyticsPanel
           isOpen={showAnalytics}

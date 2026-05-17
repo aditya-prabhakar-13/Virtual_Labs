@@ -8,6 +8,10 @@ interface ToolbarProps {
   onToolChange: (tool: ToolType) => void;
   showAnalytics: boolean;
   onToggleAnalytics: () => void;
+  showObjectPanel: boolean;
+  onToggleObjectPanel: () => void;
+  showVectors: boolean;
+  onToggleVectors: () => void;
 }
 
 interface ToolButtonProps {
@@ -64,7 +68,12 @@ function Divider() {
   );
 }
 
-export default function Toolbar({ activeTool, onToolChange, showAnalytics, onToggleAnalytics }: ToolbarProps) {
+export default function Toolbar({
+  activeTool, onToolChange,
+  showAnalytics, onToggleAnalytics,
+  showObjectPanel, onToggleObjectPanel,
+  showVectors, onToggleVectors,
+}: ToolbarProps) {
   return (
     <div
       className="flex flex-col items-center py-4 px-2 gap-1.5 h-full shrink-0 relative z-50"
@@ -232,6 +241,42 @@ export default function Toolbar({ activeTool, onToolChange, showAnalytics, onTog
 
       {/* Spacer */}
       <div className="flex-1" />
+
+      {/* Object panel toggle */}
+      <button
+        onClick={onToggleObjectPanel}
+        title="Toggle Object Panel"
+        className="flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-200"
+        style={{
+          background: showObjectPanel ? "rgba(0, 210, 255, 0.12)" : "transparent",
+          border: showObjectPanel ? "1px solid rgba(0, 210, 255, 0.35)" : "1px solid transparent",
+          color: showObjectPanel ? "var(--accent-cyan)" : "var(--text-secondary)",
+        }}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1" />
+          <rect x="14" y="3" width="7" height="7" rx="1" />
+          <rect x="3" y="14" width="7" height="7" rx="1" />
+          <rect x="14" y="14" width="7" height="7" rx="1" />
+        </svg>
+      </button>
+
+      {/* Show vectors toggle (Task 6) */}
+      <button
+        onClick={onToggleVectors}
+        title="Toggle Velocity / Force Arrows (All Bodies)"
+        className="flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-200"
+        style={{
+          background: showVectors ? "rgba(245, 158, 11, 0.12)" : "transparent",
+          border: showVectors ? "1px solid rgba(245, 158, 11, 0.35)" : "1px solid transparent",
+          color: showVectors ? "var(--accent-orange)" : "var(--text-secondary)",
+        }}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="5" y1="12" x2="19" y2="12" />
+          <polyline points="12,5 19,12 12,19" />
+        </svg>
+      </button>
 
       {/* Analytics toggle */}
       <button
