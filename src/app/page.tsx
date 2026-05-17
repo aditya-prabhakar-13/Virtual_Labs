@@ -4,6 +4,7 @@ import PhysicsCanvas from "@/components/PhysicsCanvas";
 import Toolbar from "@/components/Toolbar";
 import SimControls from "@/components/SimControls";
 import RoomManager from "@/components/RoomManager";
+import AnalyticsPanel from "@/components/AnalyticsPanel";
 import { useState, useRef, useCallback } from "react";
 
 export type ToolType =
@@ -104,6 +105,10 @@ export default function Home() {
           onRoomJoined={handleRoomJoined}
           onRoomLeft={handleRoomLeft}
           onHostPromoted={handleHostPromoted}
+        />
+        <AnalyticsPanel
+          isOpen={showAnalytics}
+          data={inspectedBodyData}
         />
       </div>
     </main>
