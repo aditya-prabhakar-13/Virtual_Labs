@@ -66,6 +66,12 @@ export interface BodySnapshot {
   sides?: number;
   fillStyle: string;
   strokeStyle: string;
+  // Material properties (Task 10)
+  mass?: number;
+  friction?: number;
+  frictionStatic?: number;
+  frictionAir?: number;
+  restitution?: number;
 }
 
 export interface ConstraintSnapshot {
@@ -79,6 +85,7 @@ export interface ConstraintSnapshot {
   length: number;
   strokeStyle: string;
   lineWidth: number;
+  constraintType?: string; // 'rope' | 'spring' | 'pivot'
 }
 
 export interface PhysicsSnapshot {

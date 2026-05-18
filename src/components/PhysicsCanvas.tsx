@@ -28,15 +28,9 @@ interface PhysicsCanvasProps {
 }
 
 const GROUND_LABEL = "__ground__";
-const WALL_LEFT_LABEL = "__wall_left__";
-const WALL_RIGHT_LABEL = "__wall_right__";
 
 function isStaticBoundary(body: Matter.Body) {
-  return (
-    body.label === GROUND_LABEL ||
-    body.label === WALL_LEFT_LABEL ||
-    body.label === WALL_RIGHT_LABEL
-  );
+  return body.label === GROUND_LABEL;
 }
 
 // Returns the point-to-line-segment distance for constraint click detection
@@ -121,6 +115,8 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
     onWorldUpdateRef.current = onWorldUpdate;
     const showVectorsRef = useRef(showVectors);
     showVectorsRef.current = showVectors;
+    // Stores net force per body captured each tick before force is reset (Task fix)
+    const capturedForcesRef = useRef<Map<number, { x: number; y: number }>>(new Map());
 
     useEffect(() => {
       activeToolRef.current = activeTool;
@@ -194,6 +190,12 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
             circleRadius: (b as any).circleRadius,
             fillStyle: (b.render as any).fillStyle || "#3b82f6",
             strokeStyle: (b.render as any).strokeStyle || "#60a5fa",
+            // Task 10: persist all material properties
+            mass: b.mass,
+            friction: b.friction,
+            frictionStatic: b.frictionStatic,
+            frictionAir: b.frictionAir,
+            restitution: b.restitution,
           }));
 
         const allConstraints = Matter.Composite.allConstraints(engine.world);
@@ -210,6 +212,7 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
             length: c.length,
             strokeStyle: (c.render as any).strokeStyle || "#ffffff",
             lineWidth: (c.render as any).lineWidth || 1,
+            constraintType: (c as any)._constraintType || "rope",
           }));
 
         return { bodies, constraints, timestamp: Date.now() } as PhysicsSnapshot;
@@ -223,25 +226,30 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
         pausedRef.current = false;
         engine.timing.timeScale = 1;
 
+        // Guard against NaN/Infinity values that would corrupt body state (Task 10 fix)
+        const safeN = (v: number | undefined | null, fallback: number): number =>
+          typeof v === "number" && isFinite(v) && !isNaN(v) ? v : fallback;
+
         const createdBodies = new Map<number, Matter.Body>();
         snapshot.bodies.forEach((bs) => {
+          // Sanitize position — a NaN position would make the body invisible and corrupt physics
+          const posX = safeN(bs.posX, 400);
+          const posY = safeN(bs.posY, 300);
+
           let body: Matter.Body | null = null;
           if (bs.shapeType === "circle" && bs.circleRadius) {
-            body = Matter.Bodies.circle(bs.posX, bs.posY, bs.circleRadius, {
+            body = Matter.Bodies.circle(posX, posY, bs.circleRadius, {
               isStatic: bs.isStatic,
-              restitution: 0.5, friction: 0.3,
               render: { fillStyle: bs.fillStyle, strokeStyle: bs.strokeStyle, lineWidth: 2 },
             });
           } else if (bs.shapeType === "triangle") {
-            body = Matter.Bodies.polygon(bs.posX, bs.posY, 3, 30, {
+            body = Matter.Bodies.polygon(posX, posY, 3, 30, {
               isStatic: bs.isStatic,
-              restitution: 0.3, friction: 0.5,
               render: { fillStyle: bs.fillStyle, strokeStyle: bs.strokeStyle, lineWidth: 2 },
             });
           } else {
-            body = Matter.Bodies.rectangle(bs.posX, bs.posY, bs.isStatic ? 120 : 50, bs.isStatic ? 20 : 50, {
+            body = Matter.Bodies.rectangle(posX, posY, bs.isStatic ? 120 : 50, bs.isStatic ? 20 : 50, {
               isStatic: bs.isStatic,
-              restitution: 0.4, friction: 0.4,
               render: { fillStyle: bs.fillStyle, strokeStyle: bs.strokeStyle, lineWidth: 2 },
             });
           }
@@ -249,9 +257,23 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
           if (body) {
             (body as any).id = bs.id;
             body.label = `synced_${bs.id}`;
-            Matter.Body.setAngle(body, bs.angle);
-            Matter.Body.setVelocity(body, { x: bs.velX, y: bs.velY });
-            Matter.Body.setAngularVelocity(body, bs.angularVel);
+
+            // Restore saved material properties with safeN guards.
+            // setMass(0) → inverseMass = Infinity → NaN position after first tick, so clamp to ≥ 0.01.
+            const savedMass = safeN(bs.mass, 0);
+            if (savedMass > 0) Matter.Body.setMass(body, Math.max(0.01, savedMass));
+
+            body.friction       = safeN(bs.friction,       0.3);
+            body.frictionStatic = safeN(bs.frictionStatic, 0.5);
+            body.frictionAir    = safeN(bs.frictionAir,    0.01);
+            body.restitution    = safeN(bs.restitution,    0.4);
+
+            Matter.Body.setAngle(body, safeN(bs.angle, 0));
+            Matter.Body.setVelocity(body, {
+              x: safeN(bs.velX, 0),
+              y: safeN(bs.velY, 0),
+            });
+            Matter.Body.setAngularVelocity(body, safeN(bs.angularVel, 0));
             Matter.Composite.add(engine.world, body);
             createdBodies.set(bs.id, body);
           }
@@ -278,6 +300,7 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
 
             const c = Matter.Constraint.create(constraintOptions);
             (c as any).id = cs.id;
+            (c as any)._constraintType = cs.constraintType || "rope";
             Matter.Composite.add(engine.world, c);
           }
         });
@@ -330,10 +353,16 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
         if (c) c.stiffness = Math.max(0.001, Math.min(1, stiffness));
       },
 
-      // --- Task 7: Air damping and constraint damping ---
+      // --- Task 7 + 8: Air damping; zero all friction when set to 0 for lossless pendulums ---
       setBodyFrictionAir: (id, frictionAir) => {
         const body = getBodyById(id);
-        if (body) body.frictionAir = Math.max(0, Math.min(1, frictionAir));
+        if (body) {
+          body.frictionAir = Math.max(0, Math.min(1, frictionAir));
+          if (frictionAir === 0) {
+            body.friction = 0;
+            body.frictionStatic = 0;
+          }
+        }
       },
       setConstraintDamping: (id, damping) => {
         const c = getConstraintById(id);
@@ -347,22 +376,13 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
       const w = container.clientWidth;
       const h = container.clientHeight;
 
+      // Only ground — left/right replaced by screen-wrapping (Task 9)
       const ground = Matter.Bodies.rectangle(w / 2, h - 15, w + 100, 30, {
         isStatic: true,
         label: GROUND_LABEL,
         render: { fillStyle: "#1e293b", strokeStyle: "#334155", lineWidth: 1 },
       });
-      const wallLeft = Matter.Bodies.rectangle(-15, h / 2, 30, h + 100, {
-        isStatic: true,
-        label: WALL_LEFT_LABEL,
-        render: { fillStyle: "#1e293b", strokeStyle: "#334155", lineWidth: 1 },
-      });
-      const wallRight = Matter.Bodies.rectangle(w + 15, h / 2, 30, h + 100, {
-        isStatic: true,
-        label: WALL_RIGHT_LABEL,
-        render: { fillStyle: "#1e293b", strokeStyle: "#334155", lineWidth: 1 },
-      });
-      Matter.Composite.add(engine.world, [ground, wallLeft, wallRight]);
+      Matter.Composite.add(engine.world, [ground]);
     }, []);
 
     const spawnBodyFromAction = useCallback(
@@ -410,6 +430,12 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
 
       const engine = Matter.Engine.create({
         gravity: { x: 0, y: 1, scale: 0.001 },
+        // Higher iterations reduce per-step constraint energy leakage (Task 8)
+        positionIterations: 10,
+        velocityIterations: 8,
+        constraintIterations: 4,
+        // Sleeping zeroes velocity when a body "settles" — must be off for pendulums
+        enableSleeping: false,
       });
       engineRef.current = engine;
 
@@ -572,12 +598,14 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
                   type: "line",
                 },
               });
-              // Tag constraint type for ObjectPanel identification
               (constraint as any)._constraintType = tool;
               Matter.Composite.add(engine.world, constraint);
 
               if (roomIdRef.current) {
                 const socket = getSocket();
+                // Task 11: include the auto-calculated rest length so the remote
+                // client creates the constraint with the same length regardless of
+                // where its body copies currently are.
                 socket.emit("physics:action", {
                   roomId: roomIdRef.current,
                   action: {
@@ -586,6 +614,7 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
                       constraintType: tool,
                       bodyAId: bodyA.id, bodyBId: clickedBody.id,
                       stiffness, damping,
+                      length: constraint.length,
                     },
                   } as PhysicsAction,
                 });
@@ -690,9 +719,41 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
       window.addEventListener("keydown", handleKeyDown);
 
       Matter.Render.run(render);
-      const runner = Matter.Runner.create();
+      // isFixed: true → constant delta, correction = 1 every tick.
+      // Without this, Verlet integration scales velocity by (delta / deltaLast) each frame.
+      // Browser frame timing is never perfectly uniform, so that ratio drifts from 1.0,
+      // causing energy loss even when frictionAir = 0 and constraint damping = 0.
+      const runner = Matter.Runner.create({ isFixed: true, delta: 1000 / 60 } as any);
       runnerRef.current = runner;
       Matter.Runner.run(runner, engine);
+
+      // --- Task 9: Screen-wrapping + force capture before Matter.js resets body.force ---
+      Matter.Events.on(engine, "beforeUpdate", () => {
+        const canvasW = render.options.width ?? w;
+        // Gravity vector that Matter.js will add during this tick (not yet in body.force)
+        const gx = engine.gravity.x * engine.gravity.scale;
+        const gy = engine.gravity.y * engine.gravity.scale;
+        const forceMap = capturedForcesRef.current;
+        forceMap.clear();
+
+        for (const body of Matter.Composite.allBodies(engine.world)) {
+          if (body.isStatic || isStaticBoundary(body)) continue;
+
+          // Net force = user-applied forces (body.force) + gravity contribution this tick.
+          // body.force is reset to 0 AFTER the tick, so we must read it here.
+          forceMap.set(body.id, {
+            x: body.force.x + body.mass * gx,
+            y: body.force.y + body.mass * gy,
+          });
+
+          // Screen wrapping
+          if (body.position.x > canvasW + 30) {
+            Matter.Body.setPosition(body, { x: -28, y: body.position.y });
+          } else if (body.position.x < -30) {
+            Matter.Body.setPosition(body, { x: canvasW + 28, y: body.position.y });
+          }
+        }
+      });
 
       // --- Task 6: afterRender — vectors for inspect tool OR global showVectors ---
       Matter.Events.on(render, "afterRender", () => {
@@ -720,8 +781,9 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
             drawArrow(ctx, px, py, px + vx * 12, py + vy * 12, "#00d2ff", 2);
           }
 
-          const fx = body.force.x;
-          const fy = body.force.y;
+          const capturedF = capturedForcesRef.current.get(body.id);
+          const fx = capturedF?.x ?? 0;
+          const fy = capturedF?.y ?? 0;
           if (Math.sqrt(fx * fx + fy * fy) > 0.000001) {
             drawArrow(ctx, px, py, px + fx * 5000, py + fy * 5000, "#f59e0b", 2);
           }
@@ -772,24 +834,48 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
       };
       render.canvas.addEventListener("click", handleInspectClick);
 
-      // --- Inspected body data update (50ms) ---
-      const inspectDataInterval = setInterval(() => {
+      // --- Inspected body data: runs every engine tick via afterUpdate (never misses forces) ---
+      // beforeUpdate captures body.force → capturedForcesRef.
+      // afterUpdate fires immediately after, so capturedForcesRef still holds this tick's force.
+      // We throttle React state updates to every 3 ticks (~20 fps) to avoid excess re-renders,
+      // but we track the PEAK force seen across those 3 ticks so impulse spikes are never dropped.
+      let inspectTick = 0;
+      let peakFx = 0;
+      let peakFy = 0;
+
+      Matter.Events.on(engine, "afterUpdate", () => {
         const body = inspectedBodyRef.current;
-        if (!body || activeToolRef.current !== "inspect") return;
+        if (!body || activeToolRef.current !== "inspect") {
+          peakFx = 0;
+          peakFy = 0;
+          return;
+        }
 
         const allBodies = Matter.Composite.allBodies(engine.world);
         if (!allBodies.includes(body)) {
           inspectedBodyRef.current = null;
           onInspectedBodyUpdateRef.current(null);
+          peakFx = 0;
+          peakFy = 0;
           return;
         }
+
+        // Forces captured in beforeUpdate for this same tick
+        const capturedF = capturedForcesRef.current.get(body.id) ?? { x: 0, y: 0 };
+
+        // Keep the largest-magnitude force seen in this throttle window
+        if (Math.hypot(capturedF.x, capturedF.y) > Math.hypot(peakFx, peakFy)) {
+          peakFx = capturedF.x;
+          peakFy = capturedF.y;
+        }
+
+        inspectTick++;
+        if (inspectTick % 3 !== 0) return; // emit at ~20 fps
 
         const vx = body.velocity.x;
         const vy = body.velocity.y;
         const velMag = Math.sqrt(vx * vx + vy * vy);
-        const fx = body.force.x;
-        const fy = body.force.y;
-        const forceMag = Math.sqrt(fx * fx + fy * fy);
+        const forceMag = Math.sqrt(peakFx * peakFx + peakFy * peakFy);
 
         const data: InspectedBodyData = {
           id: body.id,
@@ -800,13 +886,17 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
           velX: vx, velY: vy, velMag,
           angle: body.angle,
           kineticEnergy: 0.5 * body.mass * velMag * velMag,
-          forceX: fx, forceY: fy, forceMag,
+          forceX: peakFx, forceY: peakFy, forceMag,
           timestamp: Date.now(),
         };
 
+        // Reset peak for next window
+        peakFx = 0;
+        peakFy = 0;
+
         setLocalInspectedBody(data);
         onInspectedBodyUpdateRef.current(data);
-      }, 50);
+      });
 
       // --- Task 3: World data update for ObjectPanel (100ms) ---
       const worldUpdateInterval = setInterval(() => {
@@ -860,13 +950,14 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
       window.addEventListener("resize", handleResize);
 
       return () => {
-        clearInterval(inspectDataInterval);
         clearInterval(worldUpdateInterval);
         window.removeEventListener("keydown", handleKeyDown);
         window.removeEventListener("resize", handleResize);
         render.canvas.removeEventListener("mousedown", handleMouseDown);
         render.canvas.removeEventListener("mouseup", handleMouseUp);
         render.canvas.removeEventListener("click", handleInspectClick);
+        Matter.Events.off(engine, "beforeUpdate");
+        Matter.Events.off(engine, "afterUpdate");
         Matter.Events.off(render, "afterRender");
         Matter.Render.stop(render);
         Matter.Runner.stop(runner);
@@ -908,9 +999,27 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
               strokeStyle: (b.render as any).strokeStyle || "#60a5fa",
             }));
 
+          // Task 11: include constraints so remote clients can resolve any they missed
+          const liveConstraints: ConstraintSnapshot[] = Matter.Composite
+            .allConstraints(engine.world)
+            .filter(c => c.label !== "Mouse Constraint")
+            .map(c => ({
+              id: c.id,
+              bodyAId: c.bodyA ? c.bodyA.id : null,
+              bodyBId: c.bodyB ? c.bodyB.id : null,
+              pointBX: c.bodyB ? undefined : c.pointB?.x,
+              pointBY: c.bodyB ? undefined : c.pointB?.y,
+              stiffness: c.stiffness,
+              damping: c.damping,
+              length: c.length,
+              strokeStyle: (c.render as any).strokeStyle || "#ffffff",
+              lineWidth: (c.render as any).lineWidth || 2,
+              constraintType: (c as any)._constraintType || "rope",
+            }));
+
           socket.emit("physics:snapshot", {
             roomId,
-            snapshot: { bodies, constraints: [], timestamp: Date.now() } as PhysicsSnapshot,
+            snapshot: { bodies, constraints: liveConstraints, timestamp: Date.now() } as PhysicsSnapshot,
           });
         }, 50);
       }
@@ -920,6 +1029,7 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
         const world = engineRef.current.world;
         const localBodies = Matter.Composite.allBodies(world).filter(b => !isStaticBoundary(b));
 
+        // Sync body positions
         for (const remote of snapshot.bodies) {
           const local = localBodies.find(b => b.id === remote.id || b.label === `synced_${remote.id}`);
           if (local) {
@@ -927,6 +1037,40 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
             Matter.Body.setAngle(local, remote.angle);
             Matter.Body.setVelocity(local, { x: remote.velX, y: remote.velY });
             Matter.Body.setAngularVelocity(local, remote.angularVel);
+          }
+        }
+
+        // Task 11: reconcile constraints — add any from the host that we don't have locally
+        if (snapshot.constraints && snapshot.constraints.length > 0) {
+          const localConstraintIds = new Set(
+            Matter.Composite.allConstraints(world).map(c => c.id)
+          );
+          const allLocalBodies = Matter.Composite.allBodies(world);
+          const findBody = (id: number | null) =>
+            id == null ? undefined : allLocalBodies.find(b => b.id === id || b.label === `synced_${id}`);
+
+          for (const cs of snapshot.constraints) {
+            if (localConstraintIds.has(cs.id)) continue; // already present
+            const bodyA = findBody(cs.bodyAId);
+            if (!bodyA) continue;
+            const bodyB = findBody(cs.bodyBId);
+
+            const opts: any = {
+              bodyA,
+              stiffness: cs.stiffness,
+              damping: cs.damping,
+              length: cs.length,
+              render: { strokeStyle: cs.strokeStyle, lineWidth: cs.lineWidth, type: "line" },
+            };
+            if (bodyB) {
+              opts.bodyB = bodyB;
+            } else if (cs.pointBX !== undefined && cs.pointBY !== undefined) {
+              opts.pointB = { x: cs.pointBX, y: cs.pointBY };
+            }
+            const c = Matter.Constraint.create(opts);
+            (c as any).id = cs.id;
+            (c as any)._constraintType = cs.constraintType || "rope";
+            Matter.Composite.add(world, c);
           }
         }
       };
@@ -950,7 +1094,12 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
         } else if (action.type === "constraint") {
           const p = action.payload;
           const bodies = Matter.Composite.allBodies(eng.world);
-          const bodyA = bodies.find(b => b.id === p.bodyAId || b.label === `synced_${p.bodyAId}`);
+
+          // Task 11: look up by original id OR synced label OR numeric string match
+          const findBody = (id: number) =>
+            bodies.find(b => b.id === id || b.label === `synced_${id}`);
+
+          const bodyA = findBody(p.bodyAId);
 
           if (p.constraintType === "pivot" && bodyA) {
             const c = Matter.Constraint.create({
@@ -962,11 +1111,14 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
             (c as any)._constraintType = "pivot";
             Matter.Composite.add(eng.world, c);
           } else if (bodyA) {
-            const bodyB = bodies.find(b => b.id === p.bodyBId || b.label === `synced_${p.bodyBId}`);
+            const bodyB = findBody(p.bodyBId);
             if (bodyB) {
               const c = Matter.Constraint.create({
                 bodyA, bodyB,
-                stiffness: p.stiffness, damping: p.damping,
+                stiffness: p.stiffness,
+                damping: p.damping,
+                // Use the broadcasted rest length so both clients agree (Task 11)
+                ...(p.length !== undefined ? { length: p.length } : {}),
                 render: {
                   strokeStyle: p.constraintType === "rope" ? "rgba(148, 163, 184, 0.8)" : "rgba(34, 197, 94, 0.8)",
                   lineWidth: p.constraintType === "rope" ? 2 : 3,
