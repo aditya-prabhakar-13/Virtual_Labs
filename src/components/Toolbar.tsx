@@ -20,38 +20,69 @@ interface ToolButtonProps {
   onClick: (tool: ToolType) => void;
   icon: React.ReactNode;
   label: string;
+  color: string; // hex for tint
 }
 
-function ToolButton({ tool, activeTool, onClick, icon, label }: ToolButtonProps) {
+function ToolButton({ tool, activeTool, onClick, icon, label, color }: ToolButtonProps) {
   const isActive = activeTool === tool;
 
   return (
     <button
       onClick={() => onClick(tool)}
       title={label}
-      className="group relative flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-200"
+      aria-label={label}
+      className="vl-tool-btn group relative flex items-center justify-center w-11 h-11 rounded-xl"
       style={{
-        background: isActive
-          ? "rgba(0, 210, 255, 0.15)"
-          : "transparent",
-        border: isActive
-          ? "1px solid rgba(0, 210, 255, 0.4)"
-          : "1px solid transparent",
+        background: isActive ? `${color}22` : "transparent",
+        border: isActive ? `1px solid ${color}66` : "1px solid transparent",
         boxShadow: isActive
-          ? "0 0 12px rgba(0, 210, 255, 0.15), inset 0 0 12px rgba(0, 210, 255, 0.05)"
+          ? `0 0 14px ${color}55, inset 0 0 10px ${color}1a`
           : "none",
-        color: isActive ? "var(--accent-cyan)" : "var(--text-secondary)",
+        color: isActive ? color : color,
+        opacity: isActive ? 1 : 0.82,
       }}
     >
       {icon}
-      {/* Tooltip */}
       <span
-        className="absolute left-full ml-3 px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 z-50"
-        style={{
-          background: "var(--bg-surface)",
-          color: "var(--text-primary)",
-          border: "1px solid var(--border-subtle)",
-        }}
+        className="absolute left-full ml-3 px-2.5 py-1 rounded-md text-[11px] font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 z-50 vl-glass-strong"
+        style={{ color: "var(--text-primary)" }}
+      >
+        {label}
+      </span>
+    </button>
+  );
+}
+
+function ToggleButton({
+  active,
+  onClick,
+  icon,
+  label,
+  color,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  color: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="vl-tool-btn group relative flex items-center justify-center w-11 h-11 rounded-xl"
+      style={{
+        background: active ? `${color}22` : "transparent",
+        border: active ? `1px solid ${color}66` : "1px solid transparent",
+        boxShadow: active ? `0 0 14px ${color}55, inset 0 0 10px ${color}1a` : "none",
+        color: active ? color : "var(--text-secondary)",
+      }}
+    >
+      {icon}
+      <span
+        className="absolute left-full ml-3 px-2.5 py-1 rounded-md text-[11px] font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 z-50 vl-glass-strong"
+        style={{ color: "var(--text-primary)" }}
       >
         {label}
       </span>
@@ -62,56 +93,58 @@ function ToolButton({ tool, activeTool, onClick, icon, label }: ToolButtonProps)
 function Divider() {
   return (
     <div
-      className="w-8 h-px mx-auto my-1"
-      style={{ background: "var(--border-subtle)" }}
+      className="w-7 h-px mx-auto my-2"
+      style={{ background: "rgba(255,255,255,0.06)" }}
     />
   );
 }
 
 export default function Toolbar({
-  activeTool, onToolChange,
-  showAnalytics, onToggleAnalytics,
-  showObjectPanel, onToggleObjectPanel,
-  showVectors, onToggleVectors,
+  activeTool,
+  onToolChange,
+  showAnalytics,
+  onToggleAnalytics,
+  showObjectPanel,
+  onToggleObjectPanel,
+  showVectors,
+  onToggleVectors,
 }: ToolbarProps) {
   return (
     <div
-      className="flex flex-col items-center py-4 px-2 gap-1.5 h-full shrink-0 relative z-50"
+      className="flex flex-col items-center py-3 px-2 gap-1 h-full shrink-0 relative z-50"
       style={{
-        width: "60px",
-        background: "rgba(18, 18, 26, 0.85)",
-        backdropFilter: "blur(16px)",
+        width: "64px",
+        background: "rgba(12, 12, 18, 0.78)",
+        backdropFilter: "blur(20px) saturate(140%)",
+        WebkitBackdropFilter: "blur(20px) saturate(140%)",
         borderRight: "1px solid var(--border-subtle)",
       }}
     >
-      {/* Logo */}
+      {/* Brand Logo */}
       <div
-        className="flex items-center justify-center w-10 h-10 rounded-lg mb-3 font-bold text-sm"
+        className="flex items-center justify-center w-11 h-11 rounded-xl mb-2 font-bold text-base relative"
         style={{
-          background: "linear-gradient(135deg, var(--accent-cyan), var(--accent-blue))",
-          color: "#0a0a0f",
+          background: "linear-gradient(135deg, rgba(0,210,255,0.18), rgba(168,85,247,0.18))",
+          border: "1px solid rgba(255,255,255,0.08)",
         }}
       >
-        VL
+        <span
+          style={{
+            background: "var(--gradient-brand)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            backgroundClip: "text",
+            fontWeight: 800,
+            letterSpacing: "-0.02em",
+          }}
+        >
+          V
+        </span>
+        <div
+          className="absolute inset-0 rounded-xl pointer-events-none"
+          style={{ boxShadow: "0 0 16px rgba(0,210,255,0.25)" }}
+        />
       </div>
-
-      {/* Grab/Select */}
-      <ToolButton
-        tool="grab"
-        activeTool={activeTool}
-        onClick={onToolChange}
-        label="Grab (G)"
-        icon={
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v0" />
-            <path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v6" />
-            <path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8" />
-            <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 13" />
-          </svg>
-        }
-      />
-
-      <Divider />
 
       {/* Shape tools */}
       <ToolButton
@@ -119,6 +152,7 @@ export default function Toolbar({
         activeTool={activeTool}
         onClick={onToolChange}
         label="Circle (C)"
+        color="#00d2ff"
         icon={
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="9" />
@@ -130,6 +164,7 @@ export default function Toolbar({
         activeTool={activeTool}
         onClick={onToolChange}
         label="Rectangle (B)"
+        color="#a855f7"
         icon={
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="4" y="4" width="16" height="16" rx="2" />
@@ -141,6 +176,7 @@ export default function Toolbar({
         activeTool={activeTool}
         onClick={onToolChange}
         label="Triangle (T)"
+        color="#ef4444"
         icon={
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polygon points="12,3 22,21 2,21" />
@@ -152,6 +188,7 @@ export default function Toolbar({
         activeTool={activeTool}
         onClick={onToolChange}
         label="Wall (W)"
+        color="#8888a0"
         icon={
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="10" width="18" height="4" rx="1" />
@@ -167,11 +204,13 @@ export default function Toolbar({
         activeTool={activeTool}
         onClick={onToolChange}
         label="Rope (O)"
+        color="#00d2ff"
         icon={
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <line x1="5" y1="5" x2="19" y2="19" />
-            <circle cx="5" cy="5" r="2" fill="currentColor" />
-            <circle cx="19" cy="19" r="2" fill="currentColor" />
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 5 C 9 8, 9 16, 5 19" />
+            <path d="M19 5 C 15 8, 15 16, 19 19" opacity="0" />
+            <circle cx="5" cy="5" r="1.6" fill="currentColor" />
+            <circle cx="5" cy="19" r="1.6" fill="currentColor" />
           </svg>
         }
       />
@@ -180,11 +219,12 @@ export default function Toolbar({
         activeTool={activeTool}
         onClick={onToolChange}
         label="Spring (S)"
+        color="#f59e0b"
         icon={
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="4,4 8,8 4,12 8,16 4,20" />
-            <circle cx="4" cy="4" r="1.5" fill="currentColor" />
-            <circle cx="4" cy="20" r="1.5" fill="currentColor" />
+            <polyline points="5,4 9,7 5,10 9,13 5,16 9,19 5,20" />
+            <circle cx="5" cy="4" r="1.3" fill="currentColor" />
+            <circle cx="5" cy="20" r="1.3" fill="currentColor" />
           </svg>
         }
       />
@@ -192,45 +232,54 @@ export default function Toolbar({
         tool="pivot"
         activeTool={activeTool}
         onClick={onToolChange}
-        label="Pivot/Pin (P)"
+        label="Pivot / Pin (P)"
+        color="#a855f7"
         icon={
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="8" r="4" />
-            <line x1="12" y1="12" x2="12" y2="20" />
-            <line x1="8" y1="20" x2="16" y2="20" />
+            <circle cx="12" cy="9" r="3.5" />
+            <line x1="12" y1="12.5" x2="12" y2="20" strokeLinecap="round" />
+            <line x1="8.5" y1="20" x2="15.5" y2="20" strokeLinecap="round" />
           </svg>
         }
       />
 
       <Divider />
 
-      {/* Inspect tool */}
+      {/* Grab + Inspect + Delete */}
+      <ToolButton
+        tool="grab"
+        activeTool={activeTool}
+        onClick={onToolChange}
+        label="Grab (G)"
+        color="#00d2ff"
+        icon={
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2" />
+            <path d="M14 10V4a2 2 0 0 0-2-2 2 2 0 0 0-2 2v6" />
+            <path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8" />
+            <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 13" />
+          </svg>
+        }
+      />
       <ToolButton
         tool="inspect"
         activeTool={activeTool}
         onClick={onToolChange}
         label="Inspect (I)"
+        color="#a855f7"
         icon={
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M12 5v-2" />
-            <path d="M12 21v-2" />
-            <path d="M5 12H3" />
-            <path d="M21 12h-2" />
-            <path d="M16.95 7.05l1.41-1.41" />
-            <path d="M5.64 18.36l1.41-1.41" />
-            <path d="M16.95 16.95l1.41 1.41" />
-            <path d="M5.64 5.64l1.41 1.41" />
+            <circle cx="11" cy="11" r="7" />
+            <line x1="16.2" y1="16.2" x2="21" y2="21" />
           </svg>
         }
       />
-
-      {/* Delete tool */}
       <ToolButton
         tool="delete"
         activeTool={activeTool}
         onClick={onToolChange}
         label="Delete (D)"
+        color="#ef4444"
         icon={
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="3,6 5,6 21,6" />
@@ -242,67 +291,64 @@ export default function Toolbar({
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Object panel toggle */}
-      <button
+      <Divider />
+
+      {/* Panel toggles */}
+      <ToggleButton
+        active={showObjectPanel}
         onClick={onToggleObjectPanel}
-        title="Toggle Object Panel"
-        className="flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-200"
-        style={{
-          background: showObjectPanel ? "rgba(0, 210, 255, 0.12)" : "transparent",
-          border: showObjectPanel ? "1px solid rgba(0, 210, 255, 0.35)" : "1px solid transparent",
-          color: showObjectPanel ? "var(--accent-cyan)" : "var(--text-secondary)",
-        }}
-      >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="3" width="7" height="7" rx="1" />
-          <rect x="14" y="3" width="7" height="7" rx="1" />
-          <rect x="3" y="14" width="7" height="7" rx="1" />
-          <rect x="14" y="14" width="7" height="7" rx="1" />
-        </svg>
-      </button>
-
-      {/* Show vectors toggle (Task 6) */}
-      <button
+        label="Object Inspector"
+        color="#00d2ff"
+        icon={
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" />
+          </svg>
+        }
+      />
+      <ToggleButton
+        active={showVectors}
         onClick={onToggleVectors}
-        title="Toggle Velocity / Force Arrows (All Bodies)"
-        className="flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-200"
-        style={{
-          background: showVectors ? "rgba(245, 158, 11, 0.12)" : "transparent",
-          border: showVectors ? "1px solid rgba(245, 158, 11, 0.35)" : "1px solid transparent",
-          color: showVectors ? "var(--accent-orange)" : "var(--text-secondary)",
-        }}
-      >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="5" y1="12" x2="19" y2="12" />
-          <polyline points="12,5 19,12 12,19" />
-        </svg>
-      </button>
-
-      {/* Analytics toggle */}
-      <button
+        label="Velocity / Force Vectors"
+        color="#f59e0b"
+        icon={
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12" />
+            <polyline points="12,5 19,12 12,19" />
+          </svg>
+        }
+      />
+      <ToggleButton
+        active={showAnalytics}
         onClick={onToggleAnalytics}
-        title="Toggle Analytics Panel"
-        className="flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-200"
-        style={{
-          background: showAnalytics ? "rgba(124, 58, 237, 0.15)" : "transparent",
-          border: showAnalytics ? "1px solid rgba(124, 58, 237, 0.4)" : "1px solid transparent",
-          color: showAnalytics ? "var(--accent-purple)" : "var(--text-secondary)",
+        label="Analytics"
+        color="#a855f7"
+        icon={
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 3v18h18" />
+            <path d="M7 16l4-8 4 4 4-8" />
+          </svg>
+        }
+      />
+
+      {/* Exit icon */}
+      <button
+        title="Disconnect / Exit"
+        aria-label="Exit"
+        className="vl-tool-btn flex items-center justify-center w-11 h-11 rounded-xl mt-1"
+        style={{ color: "#ef4444", opacity: 0.7 }}
+        onClick={() => {
+          if (typeof window !== "undefined") window.location.reload();
         }}
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 3v18h18" />
-          <path d="M7 16l4-8 4 4 4-8" />
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+          <polyline points="16 17 21 12 16 7" />
+          <line x1="21" y1="12" x2="9" y2="12" />
         </svg>
       </button>
-
-      {/* Version label */}
-      <span
-        className="text-[10px] font-mono mt-2"
-        style={{ color: "var(--text-secondary)", opacity: 0.5 }}
-      >
-        v0.2
-      </span>
     </div>
   );
 }
-

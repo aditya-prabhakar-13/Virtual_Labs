@@ -60,6 +60,19 @@ function randomColor() {
   return shapeColors[Math.floor(Math.random() * shapeColors.length)];
 }
 
+// Convert a hex color (#rrggbb or #rgb) to rgba(...) with the given alpha.
+// Returns the input unchanged if it doesn't look like hex.
+function hexToRGBA(hex: string, alpha: number): string {
+  if (!hex || typeof hex !== "string" || !hex.startsWith("#")) return hex;
+  let h = hex.slice(1);
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  if (h.length !== 6) return hex;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 function drawArrow(
   ctx: CanvasRenderingContext2D,
   fromX: number, fromY: number,
@@ -593,7 +606,7 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
                 bodyA, bodyB: clickedBody,
                 stiffness, damping,
                 render: {
-                  strokeStyle: tool === "rope" ? "rgba(148, 163, 184, 0.8)" : "rgba(34, 197, 94, 0.8)",
+                  strokeStyle: tool === "rope" ? "rgba(0, 210, 255, 0.9)" : "rgba(245, 158, 11, 0.9)",
                   lineWidth: tool === "rope" ? 2 : 3,
                   type: "line",
                 },
@@ -642,7 +655,7 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
               bodyA: clickedBody,
               pointB: { x: clickedBody.position.x, y: clickedBody.position.y },
               length: 0, stiffness: 1,
-              render: { strokeStyle: "rgba(251, 191, 36, 0.8)", lineWidth: 2 },
+              render: { strokeStyle: "rgba(168, 85, 247, 0.9)", lineWidth: 2 },
             });
             (constraint as any)._constraintType = "pivot";
             Matter.Composite.add(engine.world, constraint);
@@ -1106,7 +1119,7 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
               bodyA,
               pointB: { x: p.pointBX, y: p.pointBY },
               length: 0, stiffness: 1,
-              render: { strokeStyle: "rgba(251, 191, 36, 0.8)", lineWidth: 2 },
+              render: { strokeStyle: "rgba(168, 85, 247, 0.9)", lineWidth: 2 },
             });
             (c as any)._constraintType = "pivot";
             Matter.Composite.add(eng.world, c);
@@ -1120,7 +1133,7 @@ const PhysicsCanvas = forwardRef<PhysicsCanvasHandle, PhysicsCanvasProps>(
                 // Use the broadcasted rest length so both clients agree (Task 11)
                 ...(p.length !== undefined ? { length: p.length } : {}),
                 render: {
-                  strokeStyle: p.constraintType === "rope" ? "rgba(148, 163, 184, 0.8)" : "rgba(34, 197, 94, 0.8)",
+                  strokeStyle: p.constraintType === "rope" ? "rgba(0, 210, 255, 0.9)" : "rgba(245, 158, 11, 0.9)",
                   lineWidth: p.constraintType === "rope" ? 2 : 3,
                   type: "line",
                 },
