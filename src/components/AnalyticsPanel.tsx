@@ -2,11 +2,9 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import {
-  LineChart,
-  Line,
-  XAxis,
+  AreaChart,
+  Area,
   YAxis,
-  CartesianGrid,
   ResponsiveContainer,
 } from "recharts";
 import type { InspectedBodyData } from "@/app/page";
@@ -14,156 +12,193 @@ import type { InspectedBodyData } from "@/app/page";
 interface AnalyticsPanelProps {
   isOpen: boolean;
   data: InspectedBodyData | null;
+  showObjectPanel: boolean;
+  onClose?: () => void;
 }
 
-export default function AnalyticsPanel({ isOpen, data }: AnalyticsPanelProps) {
+function Sparkline({
+  history,
+  dataKey,
+  color,
+}: {
+  history: InspectedBodyData[];
+  dataKey: keyof InspectedBodyData;
+  color: string;
+}) {
+  const gradId = `vl-spark-${dataKey as string}`;
+  return (
+    <div className="h-16 w-full">
+      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        <AreaChart data={history} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+          <defs>
+            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity={0.45} />
+              <stop offset="100%" stopColor={color} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <YAxis domain={["auto", "auto"]} hide />
+          <Area
+            type="monotone"
+            dataKey={dataKey as string}
+            stroke={color}
+            strokeWidth={2.25}
+            fill={`url(#${gradId})`}
+            isAnimationActive={false}
+            dot={false}
+            activeDot={false}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function MetricBlock({
+  title,
+  value,
+  color,
+  history,
+  dataKey,
+}: {
+  title: string;
+  value: string;
+  color: string;
+  history: InspectedBodyData[];
+  dataKey: keyof InspectedBodyData;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between">
+        <span className="text-[12px] font-medium" style={{ color: "var(--text-primary)" }}>
+          {title}
+        </span>
+        <span
+          className="text-[11px] font-mono font-semibold"
+          style={{ color }}
+        >
+          {value}
+        </span>
+      </div>
+      <Sparkline history={history} dataKey={dataKey} color={color} />
+    </div>
+  );
+}
+
+export default function AnalyticsPanel({
+  isOpen,
+  data,
+  showObjectPanel,
+  onClose,
+}: AnalyticsPanelProps) {
   const [history, setHistory] = useState<InspectedBodyData[]>([]);
   const currentBodyIdRef = useRef<number | null>(null);
 
-  // Update history array
   useEffect(() => {
     if (!data) {
       if (history.length > 0) setHistory([]);
       currentBodyIdRef.current = null;
       return;
     }
-
-    // Reset history if different body selected
     if (currentBodyIdRef.current !== data.id) {
       setHistory([data]);
       currentBodyIdRef.current = data.id;
       return;
     }
-
     setHistory((prev) => {
-      // Keep a rolling window of max 100 points
       const newHistory = [...prev, data];
-      if (newHistory.length > 100) {
-        return newHistory.slice(newHistory.length - 100);
-      }
+      if (newHistory.length > 100) return newHistory.slice(newHistory.length - 100);
       return newHistory;
     });
-  }, [data]);
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!isOpen) return null;
+
+  // Stack below ObjectPanel when both are open (320 + 24 gap, 50vh).
+  // When ObjectPanel is closed, sit at the top-right where ObjectPanel would have been.
+  const topOffset = showObjectPanel ? "calc(50vh + 16px)" : "80px";
+  const maxHeight = showObjectPanel ? "calc(50vh - 40px)" : "calc(100vh - 200px)";
 
   return (
     <div
-      className={`absolute top-0 right-0 h-full transition-transform duration-300 z-30`}
+      className="vl-glass-strong absolute right-5 z-30 rounded-2xl flex flex-col transition-all duration-300"
       style={{
         width: "320px",
-        transform: isOpen ? "translateX(0)" : "translateX(100%)",
-        background: "rgba(18, 18, 26, 0.85)",
-        backdropFilter: "blur(16px)",
-        borderLeft: "1px solid var(--border-subtle)",
-        display: "flex",
-        flexDirection: "column",
-        overflowY: "auto",
+        top: topOffset,
+        maxHeight,
       }}
     >
-      <div className="p-4 border-b border-gray-800 flex items-center justify-between sticky top-0 bg-[#12121a]/95 z-10 backdrop-blur-md">
-        <h2 className="text-sm font-bold text-gray-200 uppercase tracking-wider flex items-center gap-2">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" strokeWidth="2">
-            <path d="M3 3v18h18" />
-            <path d="M7 16l4-8 4 4 4-8" />
-          </svg>
-          Analytics
-        </h2>
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 pt-4 pb-2">
+        <div className="flex flex-col">
+          <span className="text-[15px] font-semibold" style={{ color: "var(--text-primary)" }}>
+            Analytics
+          </span>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <div
+              className="w-1.5 h-1.5 rounded-full vl-pulse"
+              style={{
+                background: data ? "var(--accent-green)" : "var(--text-muted)",
+                boxShadow: data ? "0 0 6px var(--accent-green)" : "none",
+              }}
+            />
+            <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+              {data ? "Live Data" : "No selection"}
+            </span>
+          </div>
+        </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            aria-label="Close Analytics"
+            className="w-7 h-7 rounded-md flex items-center justify-center text-base transition-colors hover:bg-white/5"
+            style={{ color: "var(--text-muted)" }}
+          >
+            ×
+          </button>
+        )}
       </div>
 
-      {!data ? (
-        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-gray-500">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="mb-3 opacity-50">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M12 5v-2M12 21v-2M5 12H3M21 12h-2M16.95 7.05l1.41-1.41M5.64 18.36l1.41-1.41M16.95 16.95l1.41 1.41M5.64 5.64l1.41 1.41" />
-          </svg>
-          <p className="text-sm">Select a body with the Inspect Tool to view real-time metrics.</p>
-        </div>
-      ) : (
-        <div className="p-4 flex flex-col gap-6">
-          {/* Header Info */}
-          <div className="p-3 rounded-lg bg-gray-800/30 border border-gray-700/50">
-            <div className="text-xs font-bold text-gray-300 mb-2 border-b border-gray-700 pb-2">
-              {data.label}
-            </div>
-            <div className="flex justify-between text-xs mb-1">
-              <span className="text-gray-500">Mass:</span>
-              <span className="text-white font-mono">{data.mass.toFixed(2)}</span>
-            </div>
+      {/* Body */}
+      <div className="overflow-y-auto px-4 pb-4 flex flex-col gap-4 pt-2">
+        {!data ? (
+          <div
+            className="flex flex-col items-center justify-center text-center py-10 gap-3"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" opacity="0.6">
+              <circle cx="11" cy="11" r="7" />
+              <line x1="16.2" y1="16.2" x2="21" y2="21" />
+            </svg>
+            <p className="text-[11px] leading-relaxed max-w-[220px]">
+              Use the <span style={{ color: "var(--accent-purple)" }}>Inspect</span> tool on a body to see live metrics.
+            </p>
           </div>
-
-          {/* Velocity Chart */}
-          <div className="flex flex-col gap-2">
-            <div className="flex justify-between items-end">
-              <span className="text-xs font-medium text-gray-400">Velocity (v)</span>
-              <span className="text-sm font-mono text-cyan-400">{data.velMag.toFixed(2)}</span>
-            </div>
-            <div className="h-24 w-full bg-[#0a0a0f] rounded border border-gray-800/50 p-1 relative">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <LineChart data={history}>
-                  <CartesianGrid stroke="#1a1a2e" vertical={false} />
-                  <YAxis domain={["auto", "auto"]} hide />
-                  <Line
-                    type="monotone"
-                    dataKey="velMag"
-                    stroke="#00d2ff"
-                    strokeWidth={2}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Kinetic Energy Chart */}
-          <div className="flex flex-col gap-2">
-            <div className="flex justify-between items-end">
-              <span className="text-xs font-medium text-gray-400">Kinetic Energy (KE)</span>
-              <span className="text-sm font-mono text-purple-400">{data.kineticEnergy.toFixed(2)}</span>
-            </div>
-            <div className="h-24 w-full bg-[#0a0a0f] rounded border border-gray-800/50 p-1 relative">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <LineChart data={history}>
-                  <CartesianGrid stroke="#1a1a2e" vertical={false} />
-                  <YAxis domain={["auto", "auto"]} hide />
-                  <Line
-                    type="monotone"
-                    dataKey="kineticEnergy"
-                    stroke="#8b5cf6"
-                    strokeWidth={2}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Net Force Chart */}
-          <div className="flex flex-col gap-2">
-            <div className="flex justify-between items-end">
-              <span className="text-xs font-medium text-gray-400">Net Force (F)</span>
-              <span className="text-sm font-mono text-amber-400">{(data.forceMag * 1000).toFixed(4)}</span>
-            </div>
-            <div className="h-24 w-full bg-[#0a0a0f] rounded border border-gray-800/50 p-1 relative">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <LineChart data={history}>
-                  <CartesianGrid stroke="#1a1a2e" vertical={false} />
-                  <YAxis domain={["auto", "auto"]} hide />
-                  <Line
-                    type="monotone"
-                    dataKey="forceMag"
-                    stroke="#f59e0b"
-                    strokeWidth={2}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-        </div>
-      )}
+        ) : (
+          <>
+            <MetricBlock
+              title="Velocity"
+              value={data.velMag.toFixed(2)}
+              color="#00d2ff"
+              history={history}
+              dataKey="velMag"
+            />
+            <MetricBlock
+              title="Kinetic Energy"
+              value={data.kineticEnergy.toFixed(2)}
+              color="#a855f7"
+              history={history}
+              dataKey="kineticEnergy"
+            />
+            <MetricBlock
+              title="Net Force"
+              value={(data.forceMag * 1000).toFixed(3)}
+              color="#f59e0b"
+              history={history}
+              dataKey="forceMag"
+            />
+          </>
+        )}
+      </div>
     </div>
   );
 }

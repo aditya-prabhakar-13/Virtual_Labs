@@ -7,6 +7,7 @@ import RoomManager from "@/components/RoomManager";
 import AnalyticsPanel from "@/components/AnalyticsPanel";
 import ObjectPanel from "@/components/ObjectPanel";
 import LibraryModal from "@/components/LibraryModal";
+import WorkspaceHeader from "@/components/WorkspaceHeader";
 import { useState, useRef, useCallback } from "react";
 
 export type ToolType =
@@ -220,7 +221,7 @@ export default function Home() {
         showVectors={showVectors}
         onToggleVectors={() => setShowVectors((p) => !p)}
       />
-      <div className="flex-1 relative">
+      <div className="flex-1 relative overflow-hidden">
         <PhysicsCanvas
           ref={canvasRef}
           activeTool={activeTool}
@@ -230,18 +231,19 @@ export default function Home() {
           onWorldUpdate={setWorldData}
           showVectors={showVectors}
         />
-        <SimControls
-          isPaused={paused}
-          onTogglePause={handleTogglePause}
-          onReset={handleReset}
-          onSaveClick={handleSaveScenario}
-          onLibraryClick={() => setShowLibrary(true)}
-        />
+
+        {/* Overlays sit above the matter canvas, below UI */}
+        <div className="vl-canvas-aura" />
+        <div className="vl-dot-grid" />
+
+        <WorkspaceHeader />
+
         <RoomManager
           onRoomJoined={handleRoomJoined}
           onRoomLeft={handleRoomLeft}
           onHostPromoted={handleHostPromoted}
         />
+
         <ObjectPanel
           isOpen={showObjectPanel}
           worldData={worldData}
@@ -255,11 +257,24 @@ export default function Home() {
           onSetConstraintStiffness={handleSetConstraintStiffness}
           onSetBodyFrictionAir={handleSetBodyFrictionAir}
           onSetConstraintDamping={handleSetConstraintDamping}
+          onClose={() => setShowObjectPanel(false)}
         />
+
         <AnalyticsPanel
           isOpen={showAnalytics}
           data={inspectedBodyData}
+          showObjectPanel={showObjectPanel}
+          onClose={() => setShowAnalytics(false)}
         />
+
+        <SimControls
+          isPaused={paused}
+          onTogglePause={handleTogglePause}
+          onReset={handleReset}
+          onSaveClick={handleSaveScenario}
+          onLibraryClick={() => setShowLibrary(true)}
+        />
+
         <LibraryModal
           isOpen={showLibrary}
           onClose={() => setShowLibrary(false)}
