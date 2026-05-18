@@ -263,7 +263,6 @@ export default function Home() {
         <AnalyticsPanel
           isOpen={showAnalytics}
           data={inspectedBodyData}
-          showObjectPanel={showObjectPanel}
           onClose={() => setShowAnalytics(false)}
         />
 

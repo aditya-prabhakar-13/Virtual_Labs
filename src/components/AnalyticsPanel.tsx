@@ -12,7 +12,6 @@ import type { InspectedBodyData } from "@/app/page";
 interface AnalyticsPanelProps {
   isOpen: boolean;
   data: InspectedBodyData | null;
-  showObjectPanel: boolean;
   onClose?: () => void;
 }
 
@@ -87,7 +86,6 @@ function MetricBlock({
 export default function AnalyticsPanel({
   isOpen,
   data,
-  showObjectPanel,
   onClose,
 }: AnalyticsPanelProps) {
   const [history, setHistory] = useState<InspectedBodyData[]>([]);
@@ -113,18 +111,13 @@ export default function AnalyticsPanel({
 
   if (!isOpen) return null;
 
-  // Stack below ObjectPanel when both are open (320 + 24 gap, 50vh).
-  // When ObjectPanel is closed, sit at the top-right where ObjectPanel would have been.
-  const topOffset = showObjectPanel ? "calc(50vh + 16px)" : "80px";
-  const maxHeight = showObjectPanel ? "calc(50vh - 40px)" : "calc(100vh - 200px)";
-
   return (
     <div
-      className="vl-glass-strong absolute right-5 z-30 rounded-2xl flex flex-col transition-all duration-300"
+      className="vl-glass-strong absolute right-5 z-30 rounded-2xl flex flex-col"
       style={{
         width: "320px",
-        top: topOffset,
-        maxHeight,
+        top: "80px",
+        maxHeight: "calc(100vh - 180px)",
       }}
     >
       {/* Header */}
