@@ -395,10 +395,12 @@ export default function ObjectPanel({
 
   return (
     <div
-      className="vl-glass-strong absolute top-20 right-5 z-30 rounded-2xl flex flex-col"
+      className="vl-glass-strong absolute z-30 rounded-2xl flex flex-col"
       style={{
         width: "320px",
-        maxHeight: "calc(50vh - 40px)",
+        top: "80px",
+        left: "84px",
+        maxHeight: "calc(100vh - 180px)",
       }}
     >
       {/* Header */}
