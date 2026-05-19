@@ -21,7 +21,8 @@
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
     "tailwindcss": "^4.3.0",
-    "tsx": "^4.22.0"
+    "tsx": "^4.22.0",
+    "typescript": "^6.0.3"
   },
   "devDependencies": {
     "@types/matter-js": "^0.20.2",
@@ -29,7 +30,6 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "eslint": "^9.39.4",
-    "eslint-config-next": "^16.2.6",
-    "typescript": "^6.0.3"
+    "eslint-config-next": "^16.2.6"
   }
 }
